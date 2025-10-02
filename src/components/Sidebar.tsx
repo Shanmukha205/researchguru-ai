@@ -1,5 +1,6 @@
-import { LayoutDashboard, Search, GitCompare, MessageSquare, Settings, Menu } from "lucide-react";
+import { LayoutDashboard, Search, GitCompare, MessageSquare, Settings, Menu, DollarSign, LogOut } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Sidebar as SidebarUI,
   SidebarContent,
@@ -12,17 +13,20 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
 
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Research", url: "/research", icon: Search },
   { title: "Comparison", url: "/comparison", icon: GitCompare },
   { title: "AI Assistant", url: "/assistant", icon: MessageSquare },
+  { title: "Pricing", url: "/pricing", icon: DollarSign },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
 export function Sidebar() {
   const { open } = useSidebar();
+  const { signOut } = useAuth();
 
   return (
     <SidebarUI className={open ? "w-60" : "w-14"} collapsible="icon">
@@ -37,8 +41,8 @@ export function Sidebar() {
         </SidebarTrigger>
       </div>
 
-      <SidebarContent>
-        <SidebarGroup>
+      <SidebarContent className="flex flex-col h-full">
+        <SidebarGroup className="flex-1">
           <SidebarGroupLabel className={!open ? "sr-only" : ""}>
             Navigation
           </SidebarGroupLabel>
@@ -67,6 +71,17 @@ export function Sidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        <div className="p-4 border-t border-sidebar-border">
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-3"
+            onClick={signOut}
+          >
+            <LogOut className="h-5 w-5 flex-shrink-0" />
+            {open && <span>Sign Out</span>}
+          </Button>
+        </div>
       </SidebarContent>
     </SidebarUI>
   );
