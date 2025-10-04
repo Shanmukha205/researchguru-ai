@@ -64,16 +64,16 @@ Be helpful, concise, and actionable. If you have research data above, reference 
           'Authorization': `Bearer ${GROQ_API_KEY}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: 'mixtral-8x7b-32768',
-          messages: [
-            { role: 'system', content: systemMessage },
-            ...messages
-          ],
-          temperature: 0.7,
-          max_tokens: 1000,
-        }),
-      });
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemMessage },
+          ...messages
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+      }),
+    });
 
       if (!response.ok) {
         const errorText = await response.text();

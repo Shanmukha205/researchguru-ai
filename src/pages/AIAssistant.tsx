@@ -69,12 +69,11 @@ export default function AIAssistant() {
 
       if (error) {
         console.error('Edge function error:', error);
-        toast({
-          title: "Error",
-          description: error.message || "Failed to get AI response",
-          variant: "destructive",
-        });
-        return;
+        throw new Error(error.message || 'Failed to get AI response');
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
       }
 
       if (data && data.message) {
@@ -85,6 +84,8 @@ export default function AIAssistant() {
         if (voiceEnabled) {
           speak(data.message);
         }
+      } else {
+        throw new Error('No response from AI assistant');
       }
     } catch (error) {
       console.error('Error calling AI assistant:', error);

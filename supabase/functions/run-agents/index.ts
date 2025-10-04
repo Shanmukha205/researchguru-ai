@@ -329,16 +329,20 @@ Keep it under 200 words.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'mixtral-8x7b-32768',
+        model: 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: 'You are a market research analyst providing executive summaries.' },
           { role: 'user', content: prompt }
         ],
+        temperature: 0.7,
+        max_tokens: 500,
       }),
     });
 
     if (!response.ok) {
-      throw new Error('Groq API failed');
+      const errorText = await response.text();
+      console.error('Groq API error:', response.status, errorText);
+      throw new Error(`Groq API failed: ${response.status}`);
     }
 
     const data = await response.json();
@@ -379,6 +383,15 @@ Keep it under 200 words.`;
     }),
   });
 
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Lovable AI error:', response.status, errorText);
+    throw new Error(`AI service error: ${response.status}`);
+  }
+
   const data = await response.json();
+  if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+    throw new Error('Invalid AI response format');
+  }
   return data.choices[0].message.content;
 }

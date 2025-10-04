@@ -76,7 +76,14 @@ export default function Research() {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Edge function returned an error');
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
 
       // Update status to completed
       setAgentStatus({
