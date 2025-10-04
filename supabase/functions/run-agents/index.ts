@@ -106,10 +106,14 @@ serve(async (req) => {
   }
 });
 
-async function runSentimentAgent(productName: string, companyName: string) {
+async function runSentimentAgent(productName: string, companyName: string, retries = 3): Promise<any> {
   console.log('Running sentiment agent for:', productName);
   
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+  
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
   
   const prompt = `Analyze the sentiment for the product "${productName}" by ${companyName}. 
   Provide a realistic sentiment analysis with:
@@ -123,61 +127,94 @@ async function runSentimentAgent(productName: string, companyName: string) {
   
   Format as JSON with these exact fields: overallScore, positive, negative, neutral, positiveThemes, negativeThemes, reviews`;
 
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: 'You are a market research analyst. Always respond with valid JSON.' },
-        { role: 'user', content: prompt }
-      ],
-    }),
-  });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=' + GEMINI_API_KEY, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: 'You are a market research analyst. Always respond with valid JSON. ' + prompt }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 2048,
+          }
+        }),
+      });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Sentiment API error:', errorText);
-    throw new Error(`Sentiment analysis failed: ${response.status}`);
-  }
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Sentiment API error (attempt ${attempt}/${retries}):`, response.status, errorText);
+        
+        if (attempt === retries) {
+          throw new Error(`Sentiment analysis failed after ${retries} attempts`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
 
-  const data = await response.json();
-  const content = data.choices[0].message.content;
-  
-  try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      const data = await response.json();
+      
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
+        throw new Error('Invalid Gemini API response structure');
+      }
+      
+      const content = data.candidates[0].content.parts[0].text;
+      
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+        throw new Error('No JSON found in response');
+      } catch (e) {
+        console.error('Failed to parse sentiment response:', content);
+        if (attempt === retries) {
+          // Return fallback data on final attempt
+          return {
+            overallScore: 75,
+            positive: 65,
+            negative: 20,
+            neutral: 15,
+            positiveThemes: ['Good quality', 'Value for money', 'Good design'],
+            negativeThemes: ['Battery life', 'Customer service'],
+            reviews: [
+              { rating: 5, text: 'Great product, highly recommended!' },
+              { rating: 4, text: 'Good value for money' },
+              { rating: 3, text: 'Decent product, has some issues' },
+              { rating: 4, text: 'Works well, good purchase' },
+              { rating: 2, text: 'Could be better' },
+            ]
+          };
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+    } catch (error) {
+      if (attempt === retries) {
+        throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
     }
-    throw new Error('No JSON found in response');
-  } catch (e) {
-    console.error('Failed to parse sentiment response:', content);
-    // Return fallback data
-    return {
-      overallScore: 75,
-      positive: 65,
-      negative: 20,
-      neutral: 15,
-      positiveThemes: ['Good quality', 'Value for money', 'Good design'],
-      negativeThemes: ['Battery life', 'Customer service'],
-      reviews: [
-        { rating: 5, text: 'Great product, highly recommended!' },
-        { rating: 4, text: 'Good value for money' },
-        { rating: 3, text: 'Decent product, has some issues' },
-        { rating: 4, text: 'Works well, good purchase' },
-        { rating: 2, text: 'Could be better' },
-      ]
-    };
   }
+
+  throw new Error('Sentiment analysis failed after all retries');
 }
 
-async function runCompetitorAgent(productName: string, companyName: string) {
+async function runCompetitorAgent(productName: string, companyName: string, retries = 3): Promise<any> {
   console.log('Running competitor agent for:', productName);
   
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+  
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
   
   const prompt = `Analyze competitors for "${productName}" by ${companyName}.
   Provide 3-5 real competitor products with:
@@ -192,57 +229,92 @@ async function runCompetitorAgent(productName: string, companyName: string) {
   
   Format as JSON array with these exact fields.`;
 
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: 'You are a market research analyst. Always respond with valid JSON array.' },
-        { role: 'user', content: prompt }
-      ],
-    }),
-  });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=' + GEMINI_API_KEY, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: 'You are a market research analyst. Always respond with valid JSON array. ' + prompt }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 2048,
+          }
+        }),
+      });
 
-  if (!response.ok) {
-    throw new Error(`Competitor analysis failed: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices[0].message.content;
-  
-  try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      return { competitors: JSON.parse(jsonMatch[0]) };
-    }
-    throw new Error('No JSON array found');
-  } catch (e) {
-    console.error('Failed to parse competitor response:', content);
-    return {
-      competitors: [
-        {
-          name: 'Competitor A',
-          company: 'Company A',
-          price: '$99',
-          rating: 4.2,
-          features: ['Feature 1', 'Feature 2', 'Feature 3'],
-          advantages: ['Good quality', 'Competitive price'],
-          disadvantages: ['Limited availability'],
-          marketShare: 25
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Competitor API error (attempt ${attempt}/${retries}):`, response.status, errorText);
+        
+        if (attempt === retries) {
+          throw new Error(`Competitor analysis failed after ${retries} attempts`);
         }
-      ]
-    };
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+
+      const data = await response.json();
+      
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
+        throw new Error('Invalid Gemini API response structure');
+      }
+      
+      const content = data.candidates[0].content.parts[0].text;
+      
+      try {
+        const jsonMatch = content.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          return { competitors: JSON.parse(jsonMatch[0]) };
+        }
+        throw new Error('No JSON array found');
+      } catch (e) {
+        console.error('Failed to parse competitor response:', content);
+        if (attempt === retries) {
+          return {
+            competitors: [
+              {
+                name: 'Competitor A',
+                company: 'Company A',
+                price: '$99',
+                rating: 4.2,
+                features: ['Feature 1', 'Feature 2', 'Feature 3'],
+                advantages: ['Good quality', 'Competitive price'],
+                disadvantages: ['Limited availability'],
+                marketShare: 25
+              }
+            ]
+          };
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+    } catch (error) {
+      if (attempt === retries) {
+        throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+    }
   }
+
+  throw new Error('Competitor analysis failed after all retries');
 }
 
-async function runTrendAgent(productName: string, companyName: string) {
+async function runTrendAgent(productName: string, companyName: string, retries = 3): Promise<any> {
   console.log('Running trend agent for:', productName);
   
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+  
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
   
   const prompt = `Analyze market trends for "${productName}" in ${companyName}'s market.
   Provide:
@@ -256,47 +328,78 @@ async function runTrendAgent(productName: string, companyName: string) {
   
   Format as JSON with these exact fields.`;
 
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: 'You are a market trend analyst. Always respond with valid JSON.' },
-        { role: 'user', content: prompt }
-      ],
-    }),
-  });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=' + GEMINI_API_KEY, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: 'You are a market trend analyst. Always respond with valid JSON. ' + prompt }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 2048,
+          }
+        }),
+      });
 
-  if (!response.ok) {
-    throw new Error(`Trend analysis failed: ${response.status}`);
-  }
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Trend API error (attempt ${attempt}/${retries}):`, response.status, errorText);
+        
+        if (attempt === retries) {
+          throw new Error(`Trend analysis failed after ${retries} attempts`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
 
-  const data = await response.json();
-  const content = data.choices[0].message.content;
-  
-  try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      const data = await response.json();
+      
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
+        throw new Error('Invalid Gemini API response structure');
+      }
+      
+      const content = data.candidates[0].content.parts[0].text;
+      
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+        throw new Error('No JSON found');
+      } catch (e) {
+        console.error('Failed to parse trend response:', content);
+        if (attempt === retries) {
+          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          return {
+            trendScore: 78,
+            growthRate: 15,
+            keywords: ['trending', 'popular', 'best seller'],
+            insights: ['Growing market interest', 'Positive consumer sentiment'],
+            demandPattern: 'rising',
+            predictions: ['Continued growth expected', 'Market expansion likely'],
+            monthlyData: months.map((month, i) => ({ month, value: 50 + Math.random() * 50 }))
+          };
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+    } catch (error) {
+      if (attempt === retries) {
+        throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
     }
-    throw new Error('No JSON found');
-  } catch (e) {
-    console.error('Failed to parse trend response:', content);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return {
-      trendScore: 78,
-      growthRate: 15,
-      keywords: ['trending', 'popular', 'best seller'],
-      insights: ['Growing market interest', 'Positive consumer sentiment'],
-      demandPattern: 'rising',
-      predictions: ['Continued growth expected', 'Market expansion likely'],
-      monthlyData: months.map((month, i) => ({ month, value: 50 + Math.random() * 50 }))
-    };
   }
+
+  throw new Error('Trend analysis failed after all retries');
 }
 
 async function generateAISummary(productName: string, companyName: string, results: any[]) {
