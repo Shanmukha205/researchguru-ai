@@ -1,5 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart3, TrendingUp, Users, Activity, Search, Brain, Sparkles } from "lucide-react";
+import { BarChart3, TrendingUp, Users, Activity, Search, Brain, Sparkles, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
@@ -9,6 +9,8 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
+import SearchFilters, { type SearchFilter } from "@/components/SearchFilters";
+import FavoriteButton from "@/components/FavoriteButton";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -19,10 +21,15 @@ export default function Dashboard() {
     agents: 0,
   });
   const [latestResults, setLatestResults] = useState<any>(null);
+  const [recentProjects, setRecentProjects] = useState<any[]>([]);
+  const [filteredProjects, setFilteredProjects] = useState<any[]>([]);
 
   useEffect(() => {
-    loadStats();
-    loadLatestResults();
+    if (user) {
+      loadStats();
+      loadLatestResults();
+      loadRecentProjects();
+    }
   }, [user]);
 
   const loadStats = async () => {
@@ -72,6 +79,58 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error('Error loading latest results:', error);
+    }
+  };
+
+  const loadRecentProjects = async () => {
+    if (!user) return;
+
+    try {
+      const { data } = await supabase
+        .from('research_projects')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (data) {
+        setRecentProjects(data);
+        setFilteredProjects(data);
+      }
+    } catch (error) {
+      console.error('Error loading recent projects:', error);
+    }
+  };
+
+  const handleSearch = async (filters: SearchFilter) => {
+    if (!user) return;
+
+    try {
+      let query = supabase
+        .from('research_projects')
+        .select('*')
+        .eq('user_id', user.id);
+
+      if (filters.searchQuery) {
+        query = query.or(`product_name.ilike.%${filters.searchQuery}%,company_name.ilike.%${filters.searchQuery}%`);
+      }
+
+      if (filters.status !== 'all') {
+        query = query.eq('status', filters.status);
+      }
+
+      if (filters.dateFrom) {
+        query = query.gte('created_at', filters.dateFrom);
+      }
+
+      if (filters.dateTo) {
+        query = query.lte('created_at', filters.dateTo);
+      }
+
+      const { data } = await query.order('created_at', { ascending: false });
+      setFilteredProjects(data || []);
+    } catch (error) {
+      console.error('Search error:', error);
     }
   };
 
@@ -140,6 +199,49 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Search and Filters */}
+      <SearchFilters onSearch={handleSearch} />
+
+      {/* Filtered Projects */}
+      {filteredProjects.length > 0 && (
+        <Card className="glass-effect border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Star className="h-5 w-5 text-yellow-500" />
+              Research Projects
+            </CardTitle>
+            <CardDescription>Your market research analyses</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {filteredProjects.map((project) => (
+                <div key={project.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border border-border/50 hover:bg-secondary/70 transition-colors">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-medium">{project.product_name}</h4>
+                      <FavoriteButton itemId={project.id} itemType="project" />
+                    </div>
+                    <p className="text-sm text-muted-foreground">{project.company_name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {new Date(project.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      project.status === 'completed' ? 'bg-green-500/20 text-green-500' :
+                      project.status === 'in_progress' ? 'bg-blue-500/20 text-blue-500' :
+                      'bg-yellow-500/20 text-yellow-500'
+                    }`}>
+                      {project.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {latestResults && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_configurations: {
+        Row: {
+          agent_type: string
+          created_at: string
+          filters: Json | null
+          id: string
+          keywords: string[] | null
+          sentiment_threshold: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          agent_type: string
+          created_at?: string
+          filters?: Json | null
+          id?: string
+          keywords?: string[] | null
+          sentiment_threshold?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          agent_type?: string
+          created_at?: string
+          filters?: Json | null
+          id?: string
+          keywords?: string[] | null
+          sentiment_threshold?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       agent_results: {
         Row: {
           agent_type: string
@@ -152,6 +185,30 @@ export type Database = {
           },
         ]
       }
+      saved_queries: {
+        Row: {
+          created_at: string
+          filters: Json
+          id: string
+          query_name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          filters?: Json
+          id?: string
+          query_name: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          filters?: Json
+          id?: string
+          query_name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_api_keys: {
         Row: {
           created_at: string
@@ -186,6 +243,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_favorites: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          item_type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          item_type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          item_type?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       user_settings: {
         Row: {
