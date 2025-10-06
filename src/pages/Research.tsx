@@ -7,7 +7,8 @@ import { Search, Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-
+import { ReportGenerator } from "@/components/ReportGenerator";
+import { InsightsSummary } from "@/components/InsightsSummary";
 export default function Research() {
   const [productName, setProductName] = useState("");
   const [companyName, setCompanyName] = useState("");

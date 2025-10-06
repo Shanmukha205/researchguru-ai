@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AppLayout } from '@/components/AppLayout';
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { supabase } from '@/integrations/supabase/client';
@@ -93,7 +93,6 @@ export default function AdminAnalytics() {
 
   if (adminLoading || loading) {
     return (
-      <AppLayout>
         <div className="space-y-4">
           <Skeleton className="h-8 w-64" />
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -103,13 +102,11 @@ export default function AdminAnalytics() {
             <Skeleton className="h-32" />
           </div>
         </div>
-      </AppLayout>
     );
   }
 
   if (!isAdmin) {
     return (
-      <AppLayout>
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Access Denied</AlertTitle>
@@ -117,12 +114,10 @@ export default function AdminAnalytics() {
             You do not have permission to access the admin analytics dashboard.
           </AlertDescription>
         </Alert>
-      </AppLayout>
     );
   }
 
   return (
-    <AppLayout>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Admin Analytics</h1>
@@ -211,7 +206,7 @@ export default function AdminAnalytics() {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => `${name} ${(Number(percent) * 100).toFixed(0)}%`}
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
@@ -246,6 +241,6 @@ export default function AdminAnalytics() {
           </Card>
         </div>
       </div>
-    </AppLayout>
+    
   );
 }
