@@ -11,6 +11,7 @@ import Comparison from "./pages/Comparison";
 import AIAssistant from "./pages/AIAssistant";
 import SettingsPage from "./pages/SettingsPage";
 import Pricing from "./pages/Pricing";
+import AdminAnalytics from "./pages/AdminAnalytics";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -56,6 +57,7 @@ const App = () => (
               <Route path="/assistant" element={<AIAssistant />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/pricing" element={<Pricing />} />
+              <Route path="/admin/analytics" element={<AdminAnalytics />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

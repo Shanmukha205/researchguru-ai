@@ -1,6 +1,7 @@
-import { LayoutDashboard, Search, GitCompare, MessageSquare, Settings, Menu, DollarSign, LogOut } from "lucide-react";
+import { LayoutDashboard, Search, GitCompare, MessageSquare, Settings, Menu, DollarSign, LogOut, Shield } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import {
   Sidebar as SidebarUI,
   SidebarContent,
@@ -27,6 +28,7 @@ const navItems = [
 export function Sidebar() {
   const { open } = useSidebar();
   const { signOut } = useAuth();
+  const { isAdmin } = useIsAdmin();
 
   return (
     <SidebarUI className={open ? "w-60" : "w-14"} collapsible="icon">
@@ -71,6 +73,35 @@ export function Sidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel className={!open ? "sr-only" : ""}>
+              Admin
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="/admin/analytics"
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
+                          isActive
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                            : "hover:bg-sidebar-accent/50"
+                        }`
+                      }
+                    >
+                      <Shield className="h-5 w-5 flex-shrink-0" />
+                      {open && <span>Analytics</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         <div className="p-4 border-t border-sidebar-border">
           <Button

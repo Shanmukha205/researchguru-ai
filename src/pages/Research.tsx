@@ -258,35 +258,54 @@ export default function Research() {
 
       {/* Outcomes Section */}
       {Object.keys(agentOutcomes).length > 0 && (
-        <Card className="glass-effect border-border/50">
-          <CardHeader>
-            <CardTitle>Research Outcomes</CardTitle>
-            <CardDescription>Detailed results from each agent</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {agentOutcomes['sentiment'] && (
-              <OutcomeCard
-                title="Sentiment Analysis"
-                agentType="sentiment"
-                outcome={agentOutcomes['sentiment']}
-              />
-            )}
-            {agentOutcomes['competitor'] && (
-              <OutcomeCard
-                title="Competitor Analysis"
-                agentType="competitor"
-                outcome={agentOutcomes['competitor']}
-              />
-            )}
-            {agentOutcomes['trend'] && (
-              <OutcomeCard
-                title="Market Trends"
-                agentType="trend"
-                outcome={agentOutcomes['trend']}
-              />
-            )}
-          </CardContent>
-        </Card>
+        <>
+          <Card className="glass-effect border-border/50">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Research Outcomes</CardTitle>
+                  <CardDescription>Detailed results from each agent</CardDescription>
+                </div>
+                {currentProjectId && (
+                  <ReportGenerator 
+                    data={{
+                      projectName: productName || 'Research Project',
+                      companyName: companyName,
+                      agentResults: Object.values(agentOutcomes)
+                    }}
+                  />
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {agentOutcomes['sentiment'] && (
+                <OutcomeCard
+                  title="Sentiment Analysis"
+                  agentType="sentiment"
+                  outcome={agentOutcomes['sentiment']}
+                />
+              )}
+              {agentOutcomes['competitor'] && (
+                <OutcomeCard
+                  title="Competitor Analysis"
+                  agentType="competitor"
+                  outcome={agentOutcomes['competitor']}
+                />
+              )}
+              {agentOutcomes['trend'] && (
+                <OutcomeCard
+                  title="Market Trends"
+                  agentType="trend"
+                  outcome={agentOutcomes['trend']}
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          {currentProjectId && (
+            <InsightsSummary projectId={currentProjectId} />
+          )}
+        </>
       )}
     </div>
   );
