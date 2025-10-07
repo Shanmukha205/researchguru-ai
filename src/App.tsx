@@ -12,6 +12,7 @@ import AIAssistant from "./pages/AIAssistant";
 import SettingsPage from "./pages/SettingsPage";
 import Pricing from "./pages/Pricing";
 import AdminAnalytics from "./pages/AdminAnalytics";
+import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
