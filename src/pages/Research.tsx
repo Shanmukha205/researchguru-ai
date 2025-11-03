@@ -3,12 +3,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Search, Loader2, CheckCircle, XCircle, Clock, History, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { ReportGenerator } from "@/components/ReportGenerator";
 import { InsightsSummary } from "@/components/InsightsSummary";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 export default function Research() {
   const [productName, setProductName] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -21,8 +32,73 @@ export default function Research() {
   });
   const [agentOutcomes, setAgentOutcomes] = useState<Record<string, any>>({});
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [recentHistory, setRecentHistory] = useState<any[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      loadRecentHistory();
+    }
+  }, [user]);
+
+  const loadRecentHistory = async () => {
+    if (!user) return;
+
+    try {
+      const { data } = await supabase
+        .from('research_projects')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (data) {
+        setRecentHistory(data);
+      }
+    } catch (error) {
+      console.error('Error loading recent history:', error);
+    }
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    try {
+      // Delete agent results first (due to foreign key)
+      await supabase
+        .from('agent_results')
+        .delete()
+        .eq('project_id', projectId);
+
+      // Delete insights
+      await supabase
+        .from('insights')
+        .delete()
+        .eq('project_id', projectId);
+
+      // Delete project
+      const { error } = await supabase
+        .from('research_projects')
+        .delete()
+        .eq('id', projectId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Project deleted",
+        description: "The research project has been removed successfully.",
+      });
+
+      // Reload history
+      loadRecentHistory();
+    } catch (error: any) {
+      console.error('Error deleting project:', error);
+      toast({
+        title: "Delete failed",
+        description: error.message || "Failed to delete project",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleStartResearch = async () => {
     if (!productName.trim()) {
@@ -168,6 +244,68 @@ export default function Research() {
           Enter product details to start comprehensive market analysis
         </p>
       </div>
+
+      {/* Recent History Section */}
+      {recentHistory.length > 0 && (
+        <Card className="glass-effect border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <History className="h-5 w-5 text-primary" />
+              Recent Research History
+            </CardTitle>
+            <CardDescription>Your previously analyzed products and companies</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {recentHistory.map((project) => (
+                <div key={project.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border border-border/50 hover:bg-secondary/70 transition-colors">
+                  <div className="flex-1">
+                    <h4 className="font-medium">{project.product_name}</h4>
+                    <p className="text-sm text-muted-foreground">{project.company_name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {new Date(project.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      project.status === 'completed' ? 'bg-green-500/20 text-green-500' :
+                      project.status === 'in_progress' ? 'bg-blue-500/20 text-blue-500' :
+                      'bg-yellow-500/20 text-yellow-500'
+                    }`}>
+                      {project.status}
+                    </span>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the research project
+                            "{project.product_name}" and all associated data.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDeleteProject(project.id)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="glass-effect border-border/50">

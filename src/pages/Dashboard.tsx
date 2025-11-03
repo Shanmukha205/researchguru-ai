@@ -1,5 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart3, TrendingUp, Users, Activity, Search, Brain, Sparkles, Star } from "lucide-react";
+import { BarChart3, TrendingUp, Users, Activity, Search, Brain, Sparkles, Target, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
@@ -9,8 +9,6 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
-import SearchFilters, { type SearchFilter } from "@/components/SearchFilters";
-import FavoriteButton from "@/components/FavoriteButton";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -21,14 +19,18 @@ export default function Dashboard() {
     agents: 0,
   });
   const [latestResults, setLatestResults] = useState<any>(null);
-  const [recentProjects, setRecentProjects] = useState<any[]>([]);
-  const [filteredProjects, setFilteredProjects] = useState<any[]>([]);
+  const [agentStatuses, setAgentStatuses] = useState({
+    sentiment: { active: true, status: 'Ready' },
+    competitor: { active: true, status: 'Ready' },
+    trend: { active: true, status: 'Ready' },
+    insights: { active: true, status: 'Ready' },
+  });
 
   useEffect(() => {
     if (user) {
       loadStats();
       loadLatestResults();
-      loadRecentProjects();
+      checkAgentStatuses();
     }
   }, [user]);
 
@@ -82,55 +84,32 @@ export default function Dashboard() {
     }
   };
 
-  const loadRecentProjects = async () => {
+  const checkAgentStatuses = async () => {
     if (!user) return;
 
     try {
-      const { data } = await supabase
-        .from('research_projects')
-        .select('*')
-        .eq('user_id', user.id)
+      const { data: recentResults } = await supabase
+        .from('agent_results')
+        .select('agent_type, status, created_at')
+        .eq('status', 'completed')
         .order('created_at', { ascending: false })
         .limit(10);
 
-      if (data) {
-        setRecentProjects(data);
-        setFilteredProjects(data);
+      if (recentResults && recentResults.length > 0) {
+        const newStatuses = { ...agentStatuses };
+        recentResults.forEach(result => {
+          const agentType = result.agent_type as keyof typeof agentStatuses;
+          if (newStatuses[agentType]) {
+            newStatuses[agentType] = { 
+              active: true, 
+              status: 'Completed' 
+            };
+          }
+        });
+        setAgentStatuses(newStatuses);
       }
     } catch (error) {
-      console.error('Error loading recent projects:', error);
-    }
-  };
-
-  const handleSearch = async (filters: SearchFilter) => {
-    if (!user) return;
-
-    try {
-      let query = supabase
-        .from('research_projects')
-        .select('*')
-        .eq('user_id', user.id);
-
-      if (filters.searchQuery) {
-        query = query.or(`product_name.ilike.%${filters.searchQuery}%,company_name.ilike.%${filters.searchQuery}%`);
-      }
-
-      if (filters.status !== 'all') {
-        query = query.eq('status', filters.status);
-      }
-
-      if (filters.dateFrom) {
-        query = query.gte('created_at', filters.dateFrom);
-      }
-
-      if (filters.dateTo) {
-        query = query.lte('created_at', filters.dateTo);
-      }
-
-      const { data } = await query.order('created_at', { ascending: false });
-      setFilteredProjects(data || []);
-    } catch (error) {
-      console.error('Search error:', error);
+      console.error('Error checking agent statuses:', error);
     }
   };
 
@@ -162,6 +141,37 @@ export default function Dashboard() {
       description: "AI agent analyses",
       icon: Activity,
       color: "text-green-400",
+    },
+  ];
+
+  const agentCards = [
+    {
+      name: "Sentiment Analysis Agent",
+      description: "Analyzes customer sentiment and feedback",
+      icon: TrendingUp,
+      color: "text-purple-400",
+      status: agentStatuses.sentiment,
+    },
+    {
+      name: "Competitor Analysis Agent",
+      description: "Tracks and compares market competitors",
+      icon: Target,
+      color: "text-cyan-400",
+      status: agentStatuses.competitor,
+    },
+    {
+      name: "Trend Detection Agent",
+      description: "Identifies market trends and patterns",
+      icon: Activity,
+      color: "text-green-400",
+      status: agentStatuses.trend,
+    },
+    {
+      name: "Insights Generation Agent",
+      description: "Generates actionable business insights",
+      icon: Brain,
+      color: "text-blue-400",
+      status: agentStatuses.insights,
     },
   ];
 
@@ -200,48 +210,60 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Search and Filters */}
-      <SearchFilters onSearch={handleSearch} />
-
-      {/* Filtered Projects */}
-      {filteredProjects.length > 0 && (
-        <Card className="glass-effect border-border/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Star className="h-5 w-5 text-yellow-500" />
-              Research Projects
-            </CardTitle>
-            <CardDescription>Your market research analyses</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {filteredProjects.map((project) => (
-                <div key={project.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border border-border/50 hover:bg-secondary/70 transition-colors">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-medium">{project.product_name}</h4>
-                      <FavoriteButton itemId={project.id} itemType="project" />
-                    </div>
-                    <p className="text-sm text-muted-foreground">{project.company_name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {new Date(project.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      project.status === 'completed' ? 'bg-green-500/20 text-green-500' :
-                      project.status === 'in_progress' ? 'bg-blue-500/20 text-blue-500' :
-                      'bg-yellow-500/20 text-yellow-500'
+      {/* Agent Visualization Section */}
+      <Card className="glass-effect border-border/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="h-5 w-5 text-primary" />
+            Active AI Agents
+          </CardTitle>
+          <CardDescription>Real-time status of market research agents</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {agentCards.map((agent) => (
+              <Card 
+                key={agent.name}
+                className="border-border/50 hover:border-primary/30 transition-all"
+              >
+                <CardContent className="pt-6">
+                  <div className="flex flex-col items-center text-center space-y-3">
+                    <div className={`h-12 w-12 rounded-full bg-secondary/50 flex items-center justify-center ${
+                      agent.status.status === 'Completed' ? 'bg-green-500/20' : 
+                      agent.status.status === 'Fetching' ? 'bg-blue-500/20 animate-pulse' : 
+                      'bg-secondary/50'
                     }`}>
-                      {project.status}
-                    </span>
+                      <agent.icon className={`h-6 w-6 ${agent.color}`} />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-sm">{agent.name}</h4>
+                      <p className="text-xs text-muted-foreground mt-1">{agent.description}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {agent.status.status === 'Completed' ? (
+                        <>
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
+                          <span className="text-xs text-green-500">Active</span>
+                        </>
+                      ) : agent.status.status === 'Fetching' ? (
+                        <>
+                          <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+                          <span className="text-xs text-blue-500">Fetching</span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="h-2 w-2 rounded-full bg-muted" />
+                          <span className="text-xs text-muted-foreground">Ready</span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {latestResults && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
