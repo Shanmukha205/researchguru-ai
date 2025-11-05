@@ -20,13 +20,21 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    // Handle different insight types
+    // Handle different insight types (no projectId needed for these)
     if (type === 'market-pulse') {
       return await generateMarketPulse(LOVABLE_API_KEY);
     } else if (type === 'market-correlation') {
       return await generateMarketCorrelation(LOVABLE_API_KEY);
     } else if (type === 'consumer-personas') {
       return await generateConsumerPersonas(LOVABLE_API_KEY);
+    }
+
+    // Original project-based insights flow
+    if (!projectId) {
+      return new Response(
+        JSON.stringify({ error: 'projectId is required for project insights' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Get auth token
