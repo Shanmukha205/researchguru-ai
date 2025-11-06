@@ -1,8 +1,10 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Network } from "lucide-react";
+import { Network, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface CorrelationData {
   market1: string;
@@ -11,10 +13,11 @@ interface CorrelationData {
   insight: string;
 }
 
-export default function CrossMarketCorrelation() {
+export default function CrossMarketCorrelation({ projectId }: { projectId?: string }) {
   const { user } = useAuth();
   const [correlations, setCorrelations] = useState<CorrelationData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const loadCorrelations = async () => {
     if (!user) return;
@@ -22,15 +25,17 @@ export default function CrossMarketCorrelation() {
     try {
       setLoading(true);
       const { data, error } = await supabase.functions.invoke('generate-insights', {
-        body: { type: 'market-correlation' }
+        body: { type: 'market-correlation', projectId }
       });
 
       if (error) throw error;
       if (data?.correlations) {
         setCorrelations(data.correlations);
+        setLastUpdated(new Date());
       }
     } catch (error) {
       console.error('Error loading correlations:', error);
+      toast.error("Failed to load correlation data");
     } finally {
       setLoading(false);
     }
@@ -38,7 +43,9 @@ export default function CrossMarketCorrelation() {
 
   useEffect(() => {
     loadCorrelations();
-  }, [user]);
+    const interval = setInterval(loadCorrelations, 60000);
+    return () => clearInterval(interval);
+  }, [user, projectId]);
 
   const getCorrelationColor = (correlation: number) => {
     const absCorr = Math.abs(correlation);
@@ -57,16 +64,29 @@ export default function CrossMarketCorrelation() {
   return (
     <Card className="glass-effect border-border/50">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Network className="h-5 w-5 text-primary" />
-          Cross-Market Correlation Explorer
-        </CardTitle>
-        <CardDescription>AI-powered analysis of inter-market relationships</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Network className="h-5 w-5 text-primary" />
+              Cross-Market Correlation Explorer
+            </CardTitle>
+            <CardDescription>AI-powered analysis of inter-market relationships</CardDescription>
+          </div>
+          <Button onClick={loadCorrelations} variant="outline" size="sm" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
+        {lastUpdated && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Updated {Math.round((Date.now() - lastUpdated.getTime()) / 1000)}s ago
+          </p>
+        )}
       </CardHeader>
       <CardContent>
         {loading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary shimmer"></div>
           </div>
         ) : correlations.length > 0 ? (
           <div className="space-y-4">
@@ -75,7 +95,8 @@ export default function CrossMarketCorrelation() {
               {correlations.map((corr, idx) => (
                 <div
                   key={idx}
-                  className={`p-4 rounded-lg border ${getCorrelationColor(corr.correlation)} transition-all hover:scale-105 cursor-pointer`}
+                  className={`p-4 rounded-lg border ${getCorrelationColor(corr.correlation)} transition-all duration-300 hover:scale-105 cursor-pointer animate-slide-up`}
+                  style={{ animationDelay: `${idx * 0.1}s` }}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="font-semibold text-sm">

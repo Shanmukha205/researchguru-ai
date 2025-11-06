@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Research from "./pages/Research";
 import Comparison from "./pages/Comparison";
 import FutureInsights from "./pages/FutureInsights";
+import MyNotes from "./pages/MyNotes";
 import AIAssistant from "./pages/AIAssistant";
 import EnhancedSettings from "./pages/EnhancedSettings";
 import Pricing from "./pages/Pricing";
@@ -58,6 +59,7 @@ const App = () => (
                 <Route path="/research" element={<Research />} />
                 <Route path="/comparison" element={<Comparison />} />
                 <Route path="/future-insights" element={<FutureInsights />} />
+                <Route path="/notes" element={<MyNotes />} />
                 <Route path="/assistant" element={<AIAssistant />} />
                 <Route path="/settings" element={<EnhancedSettings />} />
                 <Route path="/pricing" element={<Pricing />} />

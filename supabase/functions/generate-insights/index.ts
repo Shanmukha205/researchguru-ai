@@ -14,10 +14,19 @@ serve(async (req) => {
 
   try {
     const { projectId, type } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    
+    // Try to use primary Gemini API key, fall back to secondary if needed
+    const PRIMARY_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const SECONDARY_API_KEY = Deno.env.get("GEMINI_API_KEY_2");
+    
+    let LOVABLE_API_KEY = PRIMARY_API_KEY;
     
     if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+      LOVABLE_API_KEY = SECONDARY_API_KEY;
+      if (!LOVABLE_API_KEY) {
+        throw new Error("No API keys configured");
+      }
+      console.log("Using secondary API key");
     }
 
     // Handle different insight types (no projectId needed for these)

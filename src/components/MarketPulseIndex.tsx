@@ -1,8 +1,10 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity } from "lucide-react";
+import { Activity, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 interface MarketPulseData {
@@ -13,10 +15,11 @@ interface MarketPulseData {
   trend: number;
 }
 
-export default function MarketPulseIndex() {
+export default function MarketPulseIndex({ projectId }: { projectId?: string }) {
   const { user } = useAuth();
   const [pulseData, setPulseData] = useState<MarketPulseData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const loadMarketPulse = async () => {
     if (!user) return;
@@ -24,15 +27,17 @@ export default function MarketPulseIndex() {
     try {
       setLoading(true);
       const { data, error } = await supabase.functions.invoke('generate-insights', {
-        body: { type: 'market-pulse' }
+        body: { type: 'market-pulse', projectId }
       });
 
       if (error) throw error;
       if (data?.pulseData) {
         setPulseData(data.pulseData);
+        setLastUpdated(new Date());
       }
     } catch (error) {
       console.error('Error loading market pulse:', error);
+      toast.error("Failed to load market pulse data");
     } finally {
       setLoading(false);
     }
@@ -40,9 +45,9 @@ export default function MarketPulseIndex() {
 
   useEffect(() => {
     loadMarketPulse();
-    const interval = setInterval(loadMarketPulse, 30000); // Refresh every 30 seconds
+    const interval = setInterval(loadMarketPulse, 45000); // Refresh every 45 seconds
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, projectId]);
 
   const getScoreColor = (score: number) => {
     if (score >= 70) return 'text-green-500';
@@ -60,16 +65,29 @@ export default function MarketPulseIndex() {
   return (
     <Card className="glass-effect border-border/50">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Activity className="h-5 w-5 text-primary animate-pulse" />
-          AI-Driven Market Pulse Index
-        </CardTitle>
-        <CardDescription>Real-time unified market intelligence score</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary animate-pulse" />
+              AI-Driven Market Pulse Index
+            </CardTitle>
+            <CardDescription>Real-time unified market intelligence score</CardDescription>
+          </div>
+          <Button onClick={loadMarketPulse} variant="outline" size="sm" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
+        {lastUpdated && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Updated {Math.round((Date.now() - lastUpdated.getTime()) / 1000)}s ago
+          </p>
+        )}
       </CardHeader>
       <CardContent>
         {loading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary shimmer"></div>
           </div>
         ) : pulseData ? (
           <div className="space-y-6">
