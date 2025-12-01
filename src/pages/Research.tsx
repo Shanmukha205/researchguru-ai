@@ -3,13 +3,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Loader2, CheckCircle, XCircle, Clock, History, Trash2 } from "lucide-react";
+import { Search, Loader2, CheckCircle, XCircle, Clock, History, Trash2, Key, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { ReportGenerator } from "@/components/ReportGenerator";
 import { InsightsSummary } from "@/components/InsightsSummary";
 import { AgentMetricsCalculator } from "@/components/AgentMetricsCalculator";
+import { GeminiApiKeyModal } from "@/components/GeminiApiKeyModal";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,14 +35,34 @@ export default function Research() {
   const [agentOutcomes, setAgentOutcomes] = useState<Record<string, any>>({});
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [recentHistory, setRecentHistory] = useState<any[]>([]);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [userGeminiKey, setUserGeminiKey] = useState<string | null>(null);
+  const [hasCheckedApiKey, setHasCheckedApiKey] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
 
   useEffect(() => {
     if (user) {
       loadRecentHistory();
+      loadUserGeminiKey();
     }
   }, [user]);
+
+  const loadUserGeminiKey = async () => {
+    if (!user) return;
+    
+    const { data } = await supabase
+      .from("user_api_keys")
+      .select("key_value")
+      .eq("user_id", user.id)
+      .eq("key_name", "GEMINI_API_KEY")
+      .single();
+
+    if (data?.key_value) {
+      setUserGeminiKey(data.key_value);
+    }
+    setHasCheckedApiKey(true);
+  };
 
   const loadRecentHistory = async () => {
     if (!user) return;
@@ -148,13 +169,14 @@ export default function Research() {
         trend: "In Progress",
       });
 
-      // Call the run-agents function
+      // Call the run-agents function with user's Gemini key if available
       const { data, error } = await supabase.functions.invoke('run-agents', {
         body: {
           productName,
           companyName,
           description,
           projectId: project.id,
+          userGeminiKey: userGeminiKey,
         }
       });
 
@@ -245,6 +267,37 @@ export default function Research() {
           Enter product details to start comprehensive market analysis
         </p>
       </div>
+
+      {/* API Key Status Banner */}
+      {hasCheckedApiKey && !userGeminiKey && (
+        <div className="flex items-center justify-between p-4 rounded-lg bg-primary/10 border border-primary/30">
+          <div className="flex items-center gap-3">
+            <Key className="h-5 w-5 text-primary" />
+            <div>
+              <p className="font-medium text-sm">Using Lovable AI</p>
+              <p className="text-xs text-muted-foreground">
+                For best results, configure your own Gemini API key in Settings
+              </p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setShowApiKeyModal(true)}>
+            Configure API Key
+          </Button>
+        </div>
+      )}
+
+      {hasCheckedApiKey && userGeminiKey && (
+        <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+          <CheckCircle className="h-4 w-4 text-green-500" />
+          <span className="text-sm text-green-600 dark:text-green-400">Gemini API key configured</span>
+        </div>
+      )}
+
+      <GeminiApiKeyModal 
+        open={showApiKeyModal} 
+        onOpenChange={setShowApiKeyModal}
+        onKeyConfigured={() => loadUserGeminiKey()}
+      />
 
       {/* Recent History Section */}
       {recentHistory.length > 0 && (

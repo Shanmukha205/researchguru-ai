@@ -8,25 +8,34 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Lovable AI Gateway configuration
+const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { productName, companyName, description, projectId } = await req.json();
+    const { productName, companyName, description, projectId, userGeminiKey } = await req.json();
     
     console.log('Starting agents for:', { productName, companyName, projectId });
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Determine which API to use
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY') || null;
+    const useUserKey = userGeminiKey && userGeminiKey.trim().length > 0;
+    
+    console.log('Using API:', useUserKey ? 'User Gemini Key' : 'Lovable AI Gateway');
 
     // Run all agents in parallel
     const [sentimentResult, competitorResult, trendResult] = await Promise.allSettled([
-      runSentimentAgent(productName, companyName),
-      runCompetitorAgent(productName, companyName),
-      runTrendAgent(productName, companyName),
+      runSentimentAgent(productName, companyName, useUserKey ? userGeminiKey : null, LOVABLE_API_KEY),
+      runCompetitorAgent(productName, companyName, useUserKey ? userGeminiKey : null, LOVABLE_API_KEY),
+      runTrendAgent(productName, companyName, useUserKey ? userGeminiKey : null, LOVABLE_API_KEY),
     ]);
 
     // Store results in database
@@ -46,7 +55,7 @@ serve(async (req) => {
         project_id: projectId,
         agent_type: 'sentiment',
         status: 'failed',
-        error_message: sentimentResult.reason?.message || 'Unknown error',
+        error_message: getErrorMessage(sentimentResult.reason),
       });
     }
 
@@ -64,7 +73,7 @@ serve(async (req) => {
         project_id: projectId,
         agent_type: 'competitor',
         status: 'failed',
-        error_message: competitorResult.reason?.message || 'Unknown error',
+        error_message: getErrorMessage(competitorResult.reason),
       });
     }
 
@@ -82,12 +91,12 @@ serve(async (req) => {
         project_id: projectId,
         agent_type: 'trend',
         status: 'failed',
-        error_message: trendResult.reason?.message || 'Unknown error',
+        error_message: getErrorMessage(trendResult.reason),
       });
     }
 
-    // Generate AI summary using Groq or Lovable AI
-    const summary = await generateAISummary(productName, companyName, results);
+    // Generate AI summary
+    const summary = await generateAISummary(productName, companyName, results, LOVABLE_API_KEY);
 
     return new Response(JSON.stringify({ 
       success: true, 
@@ -107,16 +116,89 @@ serve(async (req) => {
   }
 });
 
-async function runSentimentAgent(productName: string, companyName: string, retries = 3): Promise<any> {
+function getErrorMessage(error) {
+  const message = error?.message || 'Unknown error';
+  if (message.includes('429') || message.includes('quota') || message.includes('rate limit')) {
+    return 'API rate limit exceeded. Please try again later or use a different API key.';
+  }
+  if (message.includes('401') || message.includes('403') || message.includes('invalid')) {
+    return 'Invalid API Key. Please update your Gemini API key in settings.';
+  }
+  return message;
+}
+
+async function callLovableAI(prompt, systemPrompt, lovableApiKey) {
+  if (!lovableApiKey) {
+    throw new Error('LOVABLE_API_KEY not configured');
+  }
+
+  const response = await fetch(LOVABLE_AI_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${lovableApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'google/gemini-2.5-flash',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt }
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Lovable AI error:', response.status, errorText);
+    if (response.status === 429) {
+      throw new Error('Rate limit exceeded. Please try again later.');
+    }
+    if (response.status === 402) {
+      throw new Error('Payment required. Please add credits to your workspace.');
+    }
+    throw new Error(`AI service error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+async function callGeminiDirect(prompt, geminiKey) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Gemini API error:', response.status, errorText);
+    if (response.status === 429) {
+      throw new Error('Gemini API rate limit exceeded. Please try again later.');
+    }
+    if (response.status === 400 || response.status === 401 || response.status === 403) {
+      throw new Error('Invalid API Key. Please update your Gemini API key in settings.');
+    }
+    throw new Error(`Gemini API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+    throw new Error('Invalid response structure from Gemini');
+  }
+  return data.candidates[0].content.parts[0].text;
+}
+
+async function runSentimentAgent(productName, companyName, userGeminiKey, lovableApiKey) {
   console.log('Running sentiment agent for:', productName);
   
-  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-  
-  if (!GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY not configured');
-  }
-  
-  const prompt = `Analyze the sentiment for the product "${productName}" by ${companyName}. 
+  const prompt = `Analyze the sentiment for the product "${productName}" by ${companyName || 'the company'}. 
   Provide a realistic sentiment analysis with:
   - Overall sentiment score (0-100)
   - Positive percentage
@@ -126,98 +208,49 @@ async function runSentimentAgent(productName: string, companyName: string, retri
   - Key negative themes (list 3-5)
   - Sample reviews (generate 5 realistic reviews)
   
-  Format as JSON with these exact fields: overallScore, positive, negative, neutral, positiveThemes, negativeThemes, reviews`;
+  Format as JSON with these exact fields: overallScore, positive, negative, neutral, positiveThemes, negativeThemes, reviews
+  Only respond with valid JSON, no markdown or explanation.`;
 
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=' + GEMINI_API_KEY, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: 'You are a market research analyst. Always respond with valid JSON. ' + prompt }]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 2048,
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Sentiment API error (attempt ${attempt}/${retries}):`, response.status, errorText);
-        
-        if (attempt === retries) {
-          throw new Error(`Sentiment analysis failed after ${retries} attempts`);
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        continue;
-      }
-
-      const data = await response.json();
-      
-      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
-        throw new Error('Invalid Gemini API response structure');
-      }
-      
-      const content = data.candidates[0].content.parts[0].text;
-      
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          return JSON.parse(jsonMatch[0]);
-        }
-        throw new Error('No JSON found in response');
-      } catch (e) {
-        console.error('Failed to parse sentiment response:', content);
-        if (attempt === retries) {
-          // Return fallback data on final attempt
-          return {
-            overallScore: 75,
-            positive: 65,
-            negative: 20,
-            neutral: 15,
-            positiveThemes: ['Good quality', 'Value for money', 'Good design'],
-            negativeThemes: ['Battery life', 'Customer service'],
-            reviews: [
-              { rating: 5, text: 'Great product, highly recommended!' },
-              { rating: 4, text: 'Good value for money' },
-              { rating: 3, text: 'Decent product, has some issues' },
-              { rating: 4, text: 'Works well, good purchase' },
-              { rating: 2, text: 'Could be better' },
-            ]
-          };
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        continue;
-      }
-    } catch (error) {
-      if (attempt === retries) {
-        throw error;
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+  try {
+    let content;
+    if (userGeminiKey) {
+      content = await callGeminiDirect('You are a market research analyst. Always respond with valid JSON. ' + prompt, userGeminiKey);
+    } else {
+      content = await callLovableAI(prompt, 'You are a market research analyst. Always respond with valid JSON only, no markdown.', lovableApiKey);
     }
-  }
 
-  throw new Error('Sentiment analysis failed after all retries');
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    throw new Error('No JSON found in response');
+  } catch (error) {
+    console.error('Sentiment agent error:', error);
+    // Return fallback data instead of failing
+    return {
+      overallScore: 75,
+      positive: 65,
+      negative: 20,
+      neutral: 15,
+      positiveThemes: ['Good quality', 'Value for money', 'Good design'],
+      negativeThemes: ['Battery life', 'Customer service'],
+      reviews: [
+        { rating: 5, text: 'Great product, highly recommended!' },
+        { rating: 4, text: 'Good value for money' },
+        { rating: 3, text: 'Decent product, has some issues' },
+        { rating: 4, text: 'Works well, good purchase' },
+        { rating: 2, text: 'Could be better' },
+      ],
+      _fallback: true,
+      _error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
 }
 
-async function runCompetitorAgent(productName: string, companyName: string, retries = 3): Promise<any> {
+async function runCompetitorAgent(productName, companyName, userGeminiKey, lovableApiKey) {
   console.log('Running competitor agent for:', productName);
   
-  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-  
-  if (!GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY not configured');
-  }
-  
-  const prompt = `Analyze competitors for "${productName}" by ${companyName}.
+  const prompt = `Analyze competitors for "${productName}" by ${companyName || 'the company'}.
   Provide 3-5 real competitor products with:
   - name (actual competitor product name)
   - company
@@ -228,344 +261,133 @@ async function runCompetitorAgent(productName: string, companyName: string, retr
   - disadvantages (2-3 points)
   - marketShare (percentage as number)
   
-  Format as JSON array with these exact fields.`;
+  Format as JSON array with these exact fields.
+  Only respond with valid JSON array, no markdown or explanation.`;
 
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=' + GEMINI_API_KEY, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: 'You are a market research analyst. Always respond with valid JSON array. ' + prompt }]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 2048,
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Competitor API error (attempt ${attempt}/${retries}):`, response.status, errorText);
-        
-        if (attempt === retries) {
-          throw new Error(`Competitor analysis failed after ${retries} attempts`);
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        continue;
-      }
-
-      const data = await response.json();
-      
-      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
-        throw new Error('Invalid Gemini API response structure');
-      }
-      
-      const content = data.candidates[0].content.parts[0].text;
-      
-      try {
-        const jsonMatch = content.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          return { competitors: JSON.parse(jsonMatch[0]) };
-        }
-        throw new Error('No JSON array found');
-      } catch (e) {
-        console.error('Failed to parse competitor response:', content);
-        if (attempt === retries) {
-          return {
-            competitors: [
-              {
-                name: 'Competitor A',
-                company: 'Company A',
-                price: '$99',
-                rating: 4.2,
-                features: ['Feature 1', 'Feature 2', 'Feature 3'],
-                advantages: ['Good quality', 'Competitive price'],
-                disadvantages: ['Limited availability'],
-                marketShare: 25
-              }
-            ]
-          };
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        continue;
-      }
-    } catch (error) {
-      if (attempt === retries) {
-        throw error;
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+  try {
+    let content;
+    if (userGeminiKey) {
+      content = await callGeminiDirect('You are a market research analyst. Always respond with valid JSON array. ' + prompt, userGeminiKey);
+    } else {
+      content = await callLovableAI(prompt, 'You are a market research analyst. Always respond with valid JSON array only, no markdown.', lovableApiKey);
     }
-  }
 
-  throw new Error('Competitor analysis failed after all retries');
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      return { competitors: JSON.parse(jsonMatch[0]) };
+    }
+    throw new Error('No JSON array found');
+  } catch (error) {
+    console.error('Competitor agent error:', error);
+    return {
+      competitors: [
+        {
+          name: 'Competitor A',
+          company: 'Company A',
+          price: '$99',
+          rating: 4.2,
+          features: ['Feature 1', 'Feature 2', 'Feature 3'],
+          advantages: ['Good quality', 'Competitive price'],
+          disadvantages: ['Limited availability'],
+          marketShare: 25
+        }
+      ],
+      _fallback: true,
+      _error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
 }
 
-async function runTrendAgent(productName: string, companyName: string, retries = 3): Promise<any> {
+async function runTrendAgent(productName, companyName, userGeminiKey, lovableApiKey) {
   console.log('Running trend agent for:', productName);
-  
-  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-  
-  if (!GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY not configured');
-  }
   
   const currentDate = new Date().toISOString().split('T')[0];
   
-  const prompt = `You are an advanced market trend analyst. Analyze current market trends for "${productName}" by ${companyName || 'the company'}.
+  const prompt = `Analyze current market trends for "${productName}" by ${companyName || 'the company'}.
 
-Based on your knowledge of market trends, consumer behavior, and industry movements, provide a comprehensive trend analysis:
+Provide a comprehensive trend analysis with:
+1. Top Trending Keywords (5-10 keywords)
+2. Emerging Topics (3-5 topics)
+3. Recent Market Mentions (3-5 points)
+4. Market Shift Analysis
+5. Industry Impact
+6. Consumer Interest Patterns
+7. Growth Metrics
+8. Future Predictions (3 predictions)
+9. 12-Month Trend Data
 
-1. **Top Trending Keywords** (5-10 keywords): Identify the most relevant trending terms, hashtags, or topics currently associated with this product/company in the market.
-
-2. **Emerging Topics** (3-5 topics): What new developments, innovations, or discussions are emerging around this product category or brand?
-
-3. **Recent Market Mentions** (3-5 points): Summarize key news, announcements, or significant market events related to this product or its category.
-
-4. **Market Shift Analysis**: Describe the current direction of consumer interest, adoption rates, and market positioning. Are consumers moving toward or away from this product category?
-
-5. **Industry Impact**: Which industries, demographics, or geographic regions are most affected by or interested in this product?
-
-6. **Consumer Interest Patterns**: Is demand rising, stable, or declining? What factors are driving this pattern?
-
-7. **Growth Metrics**: Provide realistic trend score (0-100) and estimated growth rate (percentage).
-
-8. **Future Predictions** (3 predictions): Based on current trends, what are likely developments in the next 6-12 months?
-
-9. **12-Month Trend Data**: Provide approximate monthly trend values (0-100 scale) showing market interest trajectory.
-
-Return ONLY a valid JSON object with this exact structure:
+Return ONLY a valid JSON object with this structure:
 {
   "trendScore": <number 0-100>,
   "growthRate": <number percentage>,
-  "keywords": [<array of 5-10 trending keyword strings>],
-  "emergingTopics": [<array of 3-5 emerging topic strings>],
-  "recentMentions": [<array of 3-5 market mention strings>],
-  "marketShift": "<detailed analysis string>",
-  "industryImpact": [<array of 2-4 impacted industry/region strings>],
-  "demandPattern": "<one of: rising, stable, declining>",
-  "insights": [<array of 3-5 key insight strings>],
+  "keywords": [<array of 5-10 keyword strings>],
+  "emergingTopics": [<array of 3-5 topic strings>],
+  "recentMentions": [<array of 3-5 mention strings>],
+  "marketShift": "<analysis string>",
+  "industryImpact": [<array of 2-4 impact strings>],
+  "demandPattern": "<rising|stable|declining>",
+  "insights": [<array of 3-5 insight strings>],
   "predictions": [<array of 3 prediction strings>],
   "monthlyData": [<array of 12 objects with {month: string, value: number}>],
   "analysisDate": "${currentDate}"
 }
 
-Focus on realistic, data-informed insights based on actual market knowledge and trends.`;
-
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=' + GEMINI_API_KEY, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: 'You are a market trend analyst. Always respond with valid JSON. ' + prompt }]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 2048,
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Trend API error (attempt ${attempt}/${retries}):`, response.status, errorText);
-        
-        if (attempt === retries) {
-          throw new Error(`Trend analysis failed after ${retries} attempts`);
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        continue;
-      }
-
-      const data = await response.json();
-      
-      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
-        throw new Error('Invalid Gemini API response structure');
-      }
-      
-      const content = data.candidates[0].content.parts[0].text;
-      
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          return JSON.parse(jsonMatch[0]);
-        }
-        throw new Error('No JSON found');
-      } catch (e) {
-        console.error('Failed to parse trend response:', content);
-        if (attempt === retries) {
-          // Enhanced fallback data with realistic structure
-          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          const baseValue = 60 + Math.random() * 20;
-          return {
-            trendScore: 75,
-            growthRate: 12,
-            keywords: [
-              'market growth',
-              'consumer demand',
-              'product innovation',
-              'competitive landscape',
-              'value proposition',
-              'customer satisfaction'
-            ],
-            emergingTopics: [
-              'Increased focus on product quality and features',
-              'Growing competitive pressure in the market',
-              'Shift towards value-for-money positioning',
-              'Enhanced customer experience expectations'
-            ],
-            recentMentions: [
-              'Product category showing steady market interest',
-              'Consumer reviews highlighting key product attributes',
-              'Competitive dynamics evolving in the segment',
-              'Market analysts noting growth potential'
-            ],
-            marketShift: 'The market shows moderate growth with increasing consumer awareness and competitive activity. Focus on value and quality remains paramount.',
-            industryImpact: [
-              'Consumer electronics sector',
-              'E-commerce platforms',
-              'Regional markets showing increased adoption'
-            ],
-            demandPattern: 'rising',
-            insights: [
-              'Market interest is gradually increasing',
-              'Consumer expectations are evolving toward premium features',
-              'Competition is driving innovation and better pricing',
-              'Digital channels are becoming primary purchase touchpoints'
-            ],
-            predictions: [
-              'Market expected to grow steadily over next 6-12 months',
-              'Increased product differentiation and feature competition',
-              'Growing emphasis on customer experience and after-sales service'
-            ],
-            monthlyData: months.map((month, i) => ({ 
-              month, 
-              value: Math.round(baseValue + (i * 2) + (Math.random() * 8 - 4))
-            })),
-            analysisDate: new Date().toISOString().split('T')[0]
-          };
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        continue;
-      }
-    } catch (error) {
-      if (attempt === retries) {
-        throw error;
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-    }
-  }
-
-  throw new Error('Trend analysis failed after all retries');
-}
-
-async function generateAISummary(productName: string, companyName: string, results: any[]) {
-  console.log('Generating AI summary');
-  
-  const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
-  
-  if (!GROQ_API_KEY) {
-    console.warn('GROQ_API_KEY not found, using Lovable AI');
-    return await generateSummaryWithLovableAI(productName, companyName, results);
-  }
+Only respond with valid JSON, no markdown or explanation.`;
 
   try {
-    const prompt = `Based on the following market research data for "${productName}" by ${companyName}, provide a comprehensive executive summary:
-
-${JSON.stringify(results, null, 2)}
-
-Provide a concise summary covering:
-1. Overall market position
-2. Key strengths and opportunities
-3. Main challenges and threats
-4. Actionable recommendations
-
-Keep it under 200 words.`;
-
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: 'You are a market research analyst providing executive summaries.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 500,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Groq API error:', response.status, errorText);
-      throw new Error(`Groq API failed: ${response.status}`);
+    let content;
+    if (userGeminiKey) {
+      content = await callGeminiDirect('You are a market trend analyst. Always respond with valid JSON. ' + prompt, userGeminiKey);
+    } else {
+      content = await callLovableAI(prompt, 'You are a market trend analyst. Always respond with valid JSON only, no markdown.', lovableApiKey);
     }
 
-    const data = await response.json();
-    return data.choices[0].message.content;
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    throw new Error('No JSON found');
   } catch (error) {
-    console.error('Groq API error, falling back to Lovable AI:', error);
-    return await generateSummaryWithLovableAI(productName, companyName, results);
+    console.error('Trend agent error:', error);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const baseValue = 60 + Math.random() * 20;
+    return {
+      trendScore: 75,
+      growthRate: 12,
+      keywords: ['market growth', 'consumer demand', 'product innovation', 'competitive landscape', 'value proposition'],
+      emergingTopics: ['Increased focus on product quality', 'Growing competitive pressure', 'Shift towards value-for-money'],
+      recentMentions: ['Product category showing steady interest', 'Consumer reviews highlighting key attributes'],
+      marketShift: 'The market shows moderate growth with increasing consumer awareness.',
+      industryImpact: ['Consumer electronics sector', 'E-commerce platforms'],
+      demandPattern: 'rising',
+      insights: ['Market interest is gradually increasing', 'Consumer expectations are evolving'],
+      predictions: ['Market expected to grow steadily', 'Increased product differentiation', 'Growing emphasis on customer experience'],
+      monthlyData: months.map((month, i) => ({ month, value: Math.round(baseValue + (i * 2) + (Math.random() * 8 - 4)) })),
+      analysisDate: new Date().toISOString().split('T')[0],
+      _fallback: true,
+      _error: error instanceof Error ? error.message : 'Unknown error'
+    };
   }
 }
 
-async function generateSummaryWithLovableAI(productName: string, companyName: string, results: any[]) {
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+async function generateAISummary(productName, companyName, results, lovableApiKey) {
+  console.log('Generating AI summary');
   
-  const prompt = `Based on the following market research data for "${productName}" by ${companyName}, provide a comprehensive executive summary:
-
-${JSON.stringify(results, null, 2)}
-
-Provide a concise summary covering:
-1. Overall market position
-2. Key strengths and opportunities
-3. Main challenges and threats
-4. Actionable recommendations
-
-Keep it under 200 words.`;
-
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: 'You are a market research analyst providing executive summaries.' },
-        { role: 'user', content: prompt }
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Lovable AI error:', response.status, errorText);
-    throw new Error(`AI service error: ${response.status}`);
+  if (!lovableApiKey) {
+    return `Analysis complete for ${productName}. Review the detailed results above.`;
   }
 
-  const data = await response.json();
-  if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-    throw new Error('Invalid AI response format');
+  const prompt = `Based on the following market research results for "${productName}" by ${companyName || 'the company'}, provide a brief executive summary (2-3 sentences):
+  
+  Results: ${JSON.stringify(results, null, 2)}
+  
+  Focus on key insights and actionable recommendations.`;
+
+  try {
+    const content = await callLovableAI(prompt, 'You are a business analyst. Provide concise executive summaries.', lovableApiKey);
+    return content || `Analysis complete for ${productName}. Review the detailed results above.`;
+  } catch (error) {
+    console.error('Summary generation error:', error);
+    return `Analysis complete for ${productName}. Review the detailed results above.`;
   }
-  return data.choices[0].message.content;
 }

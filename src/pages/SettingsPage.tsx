@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Trash2, Save, Plus, Eye, EyeOff } from "lucide-react";
+import { Trash2, Save, Plus, Eye, EyeOff, Key, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,10 +24,137 @@ export default function SettingsPage() {
   const [newKeyValue, setNewKeyValue] = useState("");
   const [showKeys, setShowKeys] = useState<{ [key: string]: boolean }>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [geminiKey, setGeminiKey] = useState("");
+  const [geminiKeyStatus, setGeminiKeyStatus] = useState<"none" | "active" | "invalid">("none");
+  const [isTesting, setIsTesting] = useState(false);
 
   useEffect(() => {
     loadApiKeys();
-  }, []);
+    checkGeminiKeyStatus();
+  }, [user]);
+
+  const checkGeminiKeyStatus = async () => {
+    if (!user) return;
+    
+    const { data } = await supabase
+      .from("user_api_keys")
+      .select("key_value")
+      .eq("user_id", user.id)
+      .eq("key_name", "GEMINI_API_KEY")
+      .single();
+
+    if (data?.key_value) {
+      setGeminiKey(data.key_value);
+      setGeminiKeyStatus("active");
+    } else {
+      setGeminiKeyStatus("none");
+    }
+  };
+
+  const testGeminiKey = async () => {
+    if (!geminiKey.trim()) {
+      toast({
+        title: "API Key Required",
+        description: "Please enter a Gemini API key to test",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsTesting(true);
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: "Say hello" }] }],
+            generationConfig: { maxOutputTokens: 10 },
+          }),
+        }
+      );
+
+      if (response.ok) {
+        setGeminiKeyStatus("active");
+        toast({
+          title: "Connection Successful",
+          description: "Gemini API key successfully connected!",
+        });
+      } else {
+        setGeminiKeyStatus("invalid");
+        toast({
+          title: "Invalid API Key",
+          description: "The API key is invalid or has insufficient permissions",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      setGeminiKeyStatus("invalid");
+      toast({
+        title: "Connection Failed",
+        description: "Could not connect to Gemini API",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const saveGeminiKey = async () => {
+    if (!geminiKey.trim()) {
+      toast({
+        title: "API Key Required",
+        description: "Please enter a Gemini API key",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const { data: existingKey } = await supabase
+        .from("user_api_keys")
+        .select("id")
+        .eq("user_id", user?.id)
+        .eq("key_name", "GEMINI_API_KEY")
+        .single();
+
+      if (existingKey) {
+        const { error } = await supabase
+          .from("user_api_keys")
+          .update({ key_value: geminiKey, updated_at: new Date().toISOString() })
+          .eq("id", existingKey.id);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("user_api_keys").insert({
+          user_id: user?.id,
+          key_name: "GEMINI_API_KEY",
+          key_value: geminiKey,
+        });
+
+        if (error) throw error;
+      }
+
+      setGeminiKeyStatus("active");
+      toast({
+        title: "API Key Saved",
+        description: "Your Gemini API key has been saved successfully",
+      });
+      loadApiKeys();
+    } catch (error: any) {
+      toast({
+        title: "Error Saving Key",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const loadApiKeys = async () => {
     try {
@@ -154,11 +281,100 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6">
+        {/* Gemini API Key Management */}
+        <Card className="glass-effect border-border/50 border-primary/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5 text-primary" />
+              Gemini API Key Management
+            </CardTitle>
+            <CardDescription>
+              Configure your Gemini API key for AI-powered research. Without a key, the built-in Lovable AI service will be used.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-secondary/50">
+              <span className="text-sm font-medium">Status:</span>
+              {geminiKeyStatus === "active" ? (
+                <span className="flex items-center gap-1 text-green-500">
+                  <CheckCircle className="h-4 w-4" />
+                  Active
+                </span>
+              ) : geminiKeyStatus === "invalid" ? (
+                <span className="flex items-center gap-1 text-destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  Invalid
+                </span>
+              ) : (
+                <span className="text-muted-foreground">Not configured (using Lovable AI)</span>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="gemini-api-key">Gemini API Key</Label>
+              <Input
+                id="gemini-api-key"
+                type="password"
+                placeholder="AIza..."
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+                className="bg-background/50"
+              />
+              <p className="text-xs text-muted-foreground">
+                Get your API key from{" "}
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline"
+                >
+                  Google AI Studio
+                </a>
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={testGeminiKey}
+                disabled={isTesting || !geminiKey.trim()}
+                className="flex-1"
+              >
+                {isTesting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  "Test Connection"
+                )}
+              </Button>
+              <Button
+                onClick={saveGeminiKey}
+                disabled={isLoading || !geminiKey.trim()}
+                className="flex-1 gradient-primary"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Save Key
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="glass-effect border-border/50">
           <CardHeader>
-            <CardTitle>API Configuration</CardTitle>
+            <CardTitle>Other API Keys</CardTitle>
             <CardDescription>
-              Manage your API keys for external services (Groq, Amazon, Flipkart, Google Trends, etc.)
+              Manage additional API keys for external services
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
