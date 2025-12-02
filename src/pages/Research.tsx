@@ -617,8 +617,8 @@ function OutcomeCard({
                 <div>
                   <p className="font-medium mb-2">Positive Themes:</p>
                   <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                    {results.positiveThemes.map((theme: any, i: number) => (
-                      <li key={i}>{typeof theme === 'string' ? theme : theme.theme || 'N/A'}</li>
+                    {results.positiveThemes.map((theme: string, i: number) => (
+                      <li key={i}>{theme}</li>
                     ))}
                   </ul>
                 </div>
@@ -627,8 +627,8 @@ function OutcomeCard({
                 <div>
                   <p className="font-medium mb-2">Negative Themes:</p>
                   <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                    {results.negativeThemes.map((theme: any, i: number) => (
-                      <li key={i}>{typeof theme === 'string' ? theme : theme.theme || 'N/A'}</li>
+                    {results.negativeThemes.map((theme: string, i: number) => (
+                      <li key={i}>{theme}</li>
                     ))}
                   </ul>
                 </div>
@@ -681,9 +681,9 @@ function OutcomeCard({
                 <div>
                   <p className="font-medium mb-2">🔥 Top Trending Keywords:</p>
                   <div className="flex flex-wrap gap-2">
-                    {results.keywords.map((keyword: any, i: number) => (
+                    {results.keywords.map((keyword: string, i: number) => (
                       <span key={i} className="px-3 py-1 bg-primary/20 rounded-full text-xs font-medium">
-                        {typeof keyword === 'string' ? keyword : keyword.keyword || 'N/A'}
+                        {keyword}
                       </span>
                     ))}
                   </div>
@@ -694,8 +694,8 @@ function OutcomeCard({
                 <div>
                   <p className="font-medium mb-2">📈 Emerging Topics:</p>
                   <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                    {results.emergingTopics.map((topic: any, i: number) => (
-                      <li key={i}>{typeof topic === 'string' ? topic : topic.topic || 'N/A'}</li>
+                    {results.emergingTopics.map((topic: string, i: number) => (
+                      <li key={i}>{topic}</li>
                     ))}
                   </ul>
                 </div>
@@ -705,8 +705,8 @@ function OutcomeCard({
                 <div>
                   <p className="font-medium mb-2">📰 Recent Market Mentions:</p>
                   <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                    {results.recentMentions.map((mention: any, i: number) => (
-                      <li key={i}>{typeof mention === 'string' ? mention : mention.mention || 'N/A'}</li>
+                    {results.recentMentions.map((mention: string, i: number) => (
+                      <li key={i}>{mention}</li>
                     ))}
                   </ul>
                 </div>
@@ -747,8 +747,8 @@ function OutcomeCard({
                 <div>
                   <p className="font-medium mb-2">🔮 Future Predictions:</p>
                   <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                    {results.predictions.map((prediction: any, i: number) => (
-                      <li key={i}>{typeof prediction === 'string' ? prediction : prediction.prediction || 'N/A'}</li>
+                    {results.predictions.map((prediction: string, i: number) => (
+                      <li key={i}>{prediction}</li>
                     ))}
                   </ul>
                 </div>
