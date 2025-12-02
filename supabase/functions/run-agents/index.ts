@@ -25,17 +25,21 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Determine which API to use
+    // Determine which API to use - prioritize GEMINI_API_KEY
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || null;
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY') || null;
-    const useUserKey = userGeminiKey && userGeminiKey.trim().length > 0;
     
-    console.log('Using API:', useUserKey ? 'User Gemini Key' : 'Lovable AI Gateway');
+    // Use user-provided key, then server GEMINI key, then Lovable AI as fallback
+    const geminiKey = userGeminiKey?.trim() || GEMINI_API_KEY;
+    const useGemini = geminiKey && geminiKey.length > 0;
+    
+    console.log('Using API:', useGemini ? 'Gemini API Direct' : 'Lovable AI Gateway');
 
     // Run all agents in parallel
     const [sentimentResult, competitorResult, trendResult] = await Promise.allSettled([
-      runSentimentAgent(productName, companyName, useUserKey ? userGeminiKey : null, LOVABLE_API_KEY),
-      runCompetitorAgent(productName, companyName, useUserKey ? userGeminiKey : null, LOVABLE_API_KEY),
-      runTrendAgent(productName, companyName, useUserKey ? userGeminiKey : null, LOVABLE_API_KEY),
+      runSentimentAgent(productName, companyName, useGemini ? geminiKey : null, LOVABLE_API_KEY),
+      runCompetitorAgent(productName, companyName, useGemini ? geminiKey : null, LOVABLE_API_KEY),
+      runTrendAgent(productName, companyName, useGemini ? geminiKey : null, LOVABLE_API_KEY),
     ]);
 
     // Store results in database
@@ -373,10 +377,8 @@ Only respond with valid JSON, no markdown or explanation.`;
 async function generateAISummary(productName, companyName, results, lovableApiKey) {
   console.log('Generating AI summary');
   
-  if (!lovableApiKey) {
-    return `Analysis complete for ${productName}. Review the detailed results above.`;
-  }
-
+  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || null;
+  
   const prompt = `Based on the following market research results for "${productName}" by ${companyName || 'the company'}, provide a brief executive summary (2-3 sentences):
   
   Results: ${JSON.stringify(results, null, 2)}
@@ -384,7 +386,14 @@ async function generateAISummary(productName, companyName, results, lovableApiKe
   Focus on key insights and actionable recommendations.`;
 
   try {
-    const content = await callLovableAI(prompt, 'You are a business analyst. Provide concise executive summaries.', lovableApiKey);
+    let content;
+    if (GEMINI_API_KEY) {
+      content = await callGeminiDirect('You are a business analyst. Provide concise executive summaries. ' + prompt, GEMINI_API_KEY);
+    } else if (lovableApiKey) {
+      content = await callLovableAI(prompt, 'You are a business analyst. Provide concise executive summaries.', lovableApiKey);
+    } else {
+      return `Analysis complete for ${productName}. Review the detailed results above.`;
+    }
     return content || `Analysis complete for ${productName}. Review the detailed results above.`;
   } catch (error) {
     console.error('Summary generation error:', error);

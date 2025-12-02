@@ -15,27 +15,27 @@ serve(async (req) => {
   try {
     const { projectId, type } = await req.json();
     
-    // Try to use primary Gemini API key, fall back to secondary if needed
-    const PRIMARY_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    const SECONDARY_API_KEY = Deno.env.get("GEMINI_API_KEY_2");
+    // Prioritize user's Gemini API key, fall back to Lovable AI Gateway
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
-    let LOVABLE_API_KEY = PRIMARY_API_KEY;
+    // Prefer direct Gemini API if key is available
+    const useGemini = GEMINI_API_KEY && GEMINI_API_KEY.trim().length > 0;
+    const apiKey = useGemini ? GEMINI_API_KEY : LOVABLE_API_KEY;
     
-    if (!LOVABLE_API_KEY) {
-      LOVABLE_API_KEY = SECONDARY_API_KEY;
-      if (!LOVABLE_API_KEY) {
-        throw new Error("No API keys configured");
-      }
-      console.log("Using secondary API key");
+    if (!apiKey) {
+      throw new Error("No API keys configured");
     }
+    
+    console.log("Using API:", useGemini ? "Gemini API Direct" : "Lovable AI Gateway");
 
     // Handle different insight types (no projectId needed for these)
     if (type === 'market-pulse') {
-      return await generateMarketPulse(LOVABLE_API_KEY, projectId);
+      return await generateMarketPulse(apiKey, projectId, useGemini);
     } else if (type === 'market-correlation') {
-      return await generateMarketCorrelation(LOVABLE_API_KEY, projectId);
+      return await generateMarketCorrelation(apiKey, projectId, useGemini);
     } else if (type === 'consumer-personas') {
-      return await generateConsumerPersonas(LOVABLE_API_KEY, projectId);
+      return await generateConsumerPersonas(apiKey, projectId, useGemini);
     }
 
     // Original project-based insights flow
@@ -194,7 +194,56 @@ Provide structured JSON output with: keyFindings (array), sentimentAnalysis (obj
   }
 });
 
-async function generateMarketPulse(apiKey: string, projectId?: string) {
+// Helper function to call Gemini API directly
+async function callGeminiDirect(prompt: string, apiKey: string): Promise<string> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Gemini API error:', response.status, errorText);
+    throw new Error(`Gemini API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+// Helper function to call Lovable AI Gateway
+async function callLovableAI(prompt: string, systemPrompt: string, apiKey: string): Promise<string> {
+  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'google/gemini-2.5-flash',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt }
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`AI Gateway error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+async function generateMarketPulse(apiKey: string, projectId?: string, useGemini: boolean = false) {
   try {
     // Create Supabase client to fetch real data
     const supabaseClient = createClient(
@@ -287,30 +336,17 @@ async function generateMarketPulse(apiKey: string, projectId?: string) {
 
 Create a UNIQUE, contextual summary that reflects the specific product/market conditions. Avoid generic phrases. Include specific insights about momentum, consumer response, or competitive position.`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a market intelligence analyst. Provide concise, actionable summaries.'
-          },
-          {
-            role: 'user',
-            content: summaryPrompt
-          }
-        ],
-      }),
-    });
-
-    const data = await response.json();
-    const aiSummary = data.choices?.[0]?.message?.content || 
-      `Market shows ${overallScore > 60 ? 'strong' : overallScore < 40 ? 'weak' : 'moderate'} momentum with ${sentimentScore > 60 ? 'positive' : 'mixed'} consumer sentiment.`;
+    let aiSummary: string;
+    try {
+      if (useGemini) {
+        aiSummary = await callGeminiDirect('You are a market intelligence analyst. Provide concise, actionable summaries. ' + summaryPrompt, apiKey);
+      } else {
+        aiSummary = await callLovableAI(summaryPrompt, 'You are a market intelligence analyst. Provide concise, actionable summaries.', apiKey);
+      }
+    } catch (error) {
+      console.error('AI summary error:', error);
+      aiSummary = `Market shows ${overallScore > 60 ? 'strong' : overallScore < 40 ? 'weak' : 'moderate'} momentum with ${sentimentScore > 60 ? 'positive' : 'mixed'} consumer sentiment.`;
+    }
     
     const pulseData = {
       score: overallScore,
@@ -342,7 +378,7 @@ Create a UNIQUE, contextual summary that reflects the specific product/market co
   }
 }
 
-async function generateMarketCorrelation(apiKey: string, projectId?: string) {
+async function generateMarketCorrelation(apiKey: string, projectId?: string, useGemini: boolean = false) {
   try {
     // Create Supabase client to fetch real data
     const supabaseClient = createClient(
@@ -375,7 +411,7 @@ async function generateMarketCorrelation(apiKey: string, projectId?: string) {
         return generateDefaultCorrelations();
       }
       
-      return await analyzeProjectCorrelations(apiKey, supabaseClient, projects);
+      return await analyzeProjectCorrelations(apiKey, supabaseClient, projects, useGemini);
     }
 
     const { data: projects, error: projectsError } = await projectsQuery.limit(5);
@@ -436,29 +472,17 @@ Requirements:
 
 Return ONLY a JSON array: [{"market1": "Product/Category Name", "market2": "Product/Category Name", "correlation": <-1 to 1>, "insight": "Specific finding about relationship"}]`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a market correlation analyst. Return valid JSON only.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-      }),
-    });
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
+    let content: string;
+    try {
+      if (useGemini) {
+        content = await callGeminiDirect('You are a market correlation analyst. Return valid JSON only. ' + prompt, apiKey);
+      } else {
+        content = await callLovableAI(prompt, 'You are a market correlation analyst. Return valid JSON only.', apiKey);
+      }
+    } catch (error) {
+      console.error('AI correlation error:', error);
+      content = '';
+    }
     
     // Try to parse AI response, fallback to default if needed
     let correlations;
@@ -505,7 +529,7 @@ Return ONLY a JSON array: [{"market1": "Product/Category Name", "market2": "Prod
   }
 }
 
-async function generateConsumerPersonas(apiKey: string, projectId?: string) {
+async function generateConsumerPersonas(apiKey: string, projectId?: string, useGemini: boolean = false) {
   try {
     // Create Supabase client to fetch real data
     const supabaseClient = createClient(
@@ -585,29 +609,17 @@ For each persona provide:
 
 Return ONLY a valid JSON array. Make each persona distinct and relevant to the actual sentiment data.`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a consumer behavior analyst. Return valid JSON only.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-      }),
-    });
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
+    let content: string;
+    try {
+      if (useGemini) {
+        content = await callGeminiDirect('You are a consumer behavior analyst. Return valid JSON only. ' + prompt, apiKey);
+      } else {
+        content = await callLovableAI(prompt, 'You are a consumer behavior analyst. Return valid JSON only.', apiKey);
+      }
+    } catch (error) {
+      console.error('AI personas error:', error);
+      content = '';
+    }
     
     // Try to parse AI response
     let personas;
@@ -724,7 +736,7 @@ function generateDefaultCorrelations() {
 }
 
 // Helper function to analyze project correlations
-async function analyzeProjectCorrelations(apiKey: string, supabaseClient: any, projects: any[]) {
+async function analyzeProjectCorrelations(apiKey: string, supabaseClient: any, projects: any[], useGemini: boolean = false) {
   const projectIds = projects.map(p => p.id);
   const { data: agentResults } = await supabaseClient
     .from('agent_results')
@@ -760,29 +772,17 @@ Requirements:
 
 Return ONLY a JSON array: [{"market1": "Product/Category Name", "market2": "Product/Category Name", "correlation": <-1 to 1>, "insight": "Specific finding about relationship"}]`;
 
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a market correlation analyst. Return valid JSON only.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-    }),
-  });
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
+  let content: string;
+  try {
+    if (useGemini) {
+      content = await callGeminiDirect('You are a market correlation analyst. Return valid JSON only. ' + prompt, apiKey);
+    } else {
+      content = await callLovableAI(prompt, 'You are a market correlation analyst. Return valid JSON only.', apiKey);
+    }
+  } catch (error) {
+    console.error('AI correlation error:', error);
+    content = '';
+  }
   
   let correlations;
   try {
