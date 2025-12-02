@@ -21,23 +21,44 @@ export default function MarketPulseIndex({ projectId }: { projectId?: string }) 
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  const [rateLimited, setRateLimited] = useState(false);
+
   const loadMarketPulse = async () => {
     if (!user) return;
 
     try {
       setLoading(true);
+      setRateLimited(false);
       const { data, error } = await supabase.functions.invoke('generate-insights', {
         body: { type: 'market-pulse', projectId }
       });
 
-      if (error) throw error;
+      if (error) {
+        const errorMsg = error.message || '';
+        if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
+          setRateLimited(true);
+          toast.error("Rate limit exceeded. Please wait a moment before retrying.");
+          return;
+        }
+        throw error;
+      }
+      if (data?.error && data.error.includes('Rate limit')) {
+        setRateLimited(true);
+        toast.error("Rate limit exceeded. Please wait a moment before retrying.");
+        return;
+      }
       if (data?.pulseData) {
         setPulseData(data.pulseData);
         setLastUpdated(new Date());
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading market pulse:', error);
-      toast.error("Failed to load market pulse data");
+      if (error?.message?.includes('429') || error?.message?.includes('rate')) {
+        setRateLimited(true);
+        toast.error("Rate limit exceeded. Please wait a moment before retrying.");
+      } else {
+        toast.error("Failed to load market pulse data");
+      }
     } finally {
       setLoading(false);
     }
@@ -141,6 +162,16 @@ export default function MarketPulseIndex({ projectId }: { projectId?: string }) 
                 <div className="text-xs text-muted-foreground">Trend</div>
               </div>
             </div>
+          </div>
+        ) : rateLimited ? (
+          <div className="text-center py-8 space-y-4">
+            <div className="text-amber-500 font-medium">Rate limit exceeded</div>
+            <p className="text-sm text-muted-foreground">
+              The AI service is busy. Please wait 30 seconds and try again.
+            </p>
+            <Button onClick={loadMarketPulse} variant="outline" size="sm">
+              Try Again
+            </Button>
           </div>
         ) : (
           <div className="text-center text-muted-foreground py-8">
