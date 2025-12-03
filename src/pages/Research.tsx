@@ -617,8 +617,8 @@ function OutcomeCard({
                 <div>
                   <p className="font-medium mb-2">Positive Themes:</p>
                   <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                    {results.positiveThemes.map((theme: string, i: number) => (
-                      <li key={i}>{theme}</li>
+                    {results.positiveThemes.map((theme: string | { theme: string; evidence?: string }, i: number) => (
+                      <li key={i}>{typeof theme === 'string' ? theme : theme.theme}</li>
                     ))}
                   </ul>
                 </div>
@@ -627,8 +627,8 @@ function OutcomeCard({
                 <div>
                   <p className="font-medium mb-2">Negative Themes:</p>
                   <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                    {results.negativeThemes.map((theme: string, i: number) => (
-                      <li key={i}>{theme}</li>
+                    {results.negativeThemes.map((theme: string | { theme: string; evidence?: string }, i: number) => (
+                      <li key={i}>{typeof theme === 'string' ? theme : theme.theme}</li>
                     ))}
                   </ul>
                 </div>
