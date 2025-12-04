@@ -5,13 +5,6 @@ import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { 
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
-} from 'recharts';
-import MarketPulseIndex from "@/components/MarketPulseIndex";
-import CrossMarketCorrelation from "@/components/CrossMarketCorrelation";
-import ConsumerPersonaPredictor from "@/components/ConsumerPersonaPredictor";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -21,7 +14,7 @@ export default function Dashboard() {
     insights: 0,
     agents: 0,
   });
-  const [latestResults, setLatestResults] = useState<any>(null);
+  const [latestInsights, setLatestInsights] = useState<any[]>([]);
   const [agentStatuses, setAgentStatuses] = useState({
     sentiment: { active: true, status: 'Ready' },
     competitor: { active: true, status: 'Ready' },
@@ -32,7 +25,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (user) {
       loadStats();
-      loadLatestResults();
+      loadLatestInsights();
       checkAgentStatuses();
     }
   }, [user]);
@@ -55,35 +48,21 @@ export default function Dashboard() {
     }
   };
 
-  const loadLatestResults = async () => {
+  const loadLatestInsights = async () => {
     if (!user) return;
 
     try {
-      const { data: projects } = await supabase
-        .from('research_projects')
-        .select('id')
-        .eq('user_id', user.id)
+      const { data: insights } = await supabase
+        .from('insights')
+        .select('*')
         .order('created_at', { ascending: false })
-        .limit(1);
+        .limit(4);
 
-      if (projects && projects.length > 0) {
-        const { data: results } = await supabase
-          .from('agent_results')
-          .select('*')
-          .eq('project_id', projects[0].id)
-          .eq('status', 'completed');
-
-        if (results && results.length > 0) {
-          const organized = {
-            sentiment: results.find(r => r.agent_type === 'sentiment')?.results as any,
-            competitor: results.find(r => r.agent_type === 'competitor')?.results as any,
-            trend: results.find(r => r.agent_type === 'trend')?.results as any,
-          };
-          setLatestResults(organized);
-        }
+      if (insights) {
+        setLatestInsights(insights);
       }
     } catch (error) {
-      console.error('Error loading latest results:', error);
+      console.error('Error loading latest insights:', error);
     }
   };
 
@@ -132,9 +111,9 @@ export default function Dashboard() {
       color: "text-purple-400",
     },
     {
-      title: "Competitors Analyzed",
-      value: ((latestResults?.competitor as any)?.competitors?.length || 0).toString(),
-      description: "Market competitors tracked",
+      title: "Active Users",
+      value: "1",
+      description: "Team members",
       icon: Users,
       color: "text-cyan-400",
     },
@@ -177,8 +156,6 @@ export default function Dashboard() {
       status: agentStatuses.insights,
     },
   ];
-
-  const COLORS = ['#10b981', '#f59e0b', '#ef4444'];
 
   return (
     <div className="p-8 space-y-8 animate-fade-in">
@@ -268,118 +245,43 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {latestResults && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Sentiment Analysis */}
-          {latestResults.sentiment && (
-            <Card className="glass-effect border-border/50">
-              <CardHeader>
-                <CardTitle>Sentiment Analysis</CardTitle>
-                <CardDescription>Customer sentiment breakdown</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: 'Positive', value: latestResults.sentiment.positive || 0 },
-                        { name: 'Neutral', value: latestResults.sentiment.neutral || 0 },
-                        { name: 'Negative', value: latestResults.sentiment.negative || 0 },
-                      ]}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={(entry: any) => {
-                        const { name, percent } = entry;
-                        return `${name}: ${((percent || 0) * 100).toFixed(0)}%`;
-                      }}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {[0, 1, 2].map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Trend Analysis */}
-          {latestResults.trend && latestResults.trend.monthlyData && (
-            <Card className="glass-effect border-border/50">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  Market Trends
-                  {latestResults.trend.demandPattern && (
-                    <span className={`text-xs px-2 py-1 rounded-full ${
-                      latestResults.trend.demandPattern === 'rising' ? 'bg-green-500/20 text-green-500' :
-                      latestResults.trend.demandPattern === 'declining' ? 'bg-red-500/20 text-red-500' :
-                      'bg-yellow-500/20 text-yellow-500'
-                    }`}>
-                      {latestResults.trend.demandPattern}
-                    </span>
-                  )}
-                </CardTitle>
-                <CardDescription>
-                  {latestResults.trend.trendScore && `Trend Score: ${latestResults.trend.trendScore}/100 • `}
-                  12-month analysis
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={latestResults.trend.monthlyData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={2} name="Trend Value" />
-                  </LineChart>
-                </ResponsiveContainer>
-                
-                {latestResults.trend.keywords && latestResults.trend.keywords.length > 0 && (
-                  <div>
-                    <p className="text-sm font-medium mb-2">Top Keywords:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {latestResults.trend.keywords.slice(0, 6).map((keyword: string, i: number) => (
-                        <span key={i} className="px-2 py-1 bg-primary/10 rounded-md text-xs">
-                          {keyword}
-                        </span>
-                      ))}
+      {/* Latest Insights Section */}
+      {latestInsights.length > 0 && (
+        <Card className="glass-effect border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Latest AI Insights
+            </CardTitle>
+            <CardDescription>Recent AI-powered market intelligence</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {latestInsights.slice(0, 4).map((insight, index) => (
+                <Card key={insight.id || index} className="border-border/50 bg-secondary/20">
+                  <CardContent className="pt-4">
+                    <div className="flex items-start gap-3">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium capitalize">{insight.insight_type?.replace(/-/g, ' ') || 'Insight'}</p>
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                          {typeof insight.data === 'object' 
+                            ? (insight.data as any)?.summary || 'Analysis completed'
+                            : 'Analysis completed'}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {new Date(insight.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Competitor Comparison */}
-          {latestResults.competitor && (latestResults.competitor as any).competitors && (
-            <Card className="glass-effect border-border/50 lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Competitor Comparison</CardTitle>
-                <CardDescription>Market share distribution</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={(latestResults.competitor as any).competitors.slice(0, 5)}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="marketShare" fill="#06b6d4" />
-                    <Bar dataKey="rating" fill="#10b981" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -405,7 +307,7 @@ export default function Dashboard() {
 
         <Card 
           className="glass-effect border-border/50 hover:border-accent/50 transition-all cursor-pointer group"
-          onClick={() => navigate('/assistant')}
+          onClick={() => navigate('/ai-assistant')}
         >
           <CardHeader>
             <div className="h-12 w-12 rounded-full bg-accent/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -413,7 +315,7 @@ export default function Dashboard() {
             </div>
             <CardTitle>AI Assistant</CardTitle>
             <CardDescription>
-              Get instant insights powered by Groq AI
+              Get instant insights powered by AI
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -443,52 +345,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Advanced Analytics Section */}
-      <div className="space-y-6">
-        <div className="text-center space-y-2">
-          <h2 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-            Future Insights & Predictive Analytics
-          </h2>
-          <p className="text-muted-foreground">
-            Next-level market intelligence powered by AI
-          </p>
-        </div>
-
-        <MarketPulseIndex />
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <CrossMarketCorrelation />
-          <ConsumerPersonaPredictor />
-        </div>
-      </div>
-
-      {stats.projects === 0 && (
-        <Card className="glass-effect border-border/50 border-primary/30">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              Welcome to Market Research Intelligence Dashboard!
-            </CardTitle>
-            <CardDescription>
-              Get started by creating your first research project
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Our AI agents will help you analyze sentiment, track competitors, and detect market trends automatically.
-            </p>
-            <div className="flex gap-4">
-              <Button 
-                onClick={() => navigate('/research')}
-                className="gradient-primary hover:opacity-90 transition-opacity"
-              >
-                Create Research Project
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

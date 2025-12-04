@@ -9,7 +9,6 @@ import { AppLayout } from "./components/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import Research from "./pages/Research";
 import Comparison from "./pages/Comparison";
-import MarketPulse from "./pages/MarketPulse";
 import CrossMarket from "./pages/CrossMarket";
 import ConsumerPersona from "./pages/ConsumerPersona";
 import ScenarioSimulator from "./pages/ScenarioSimulator";
@@ -62,7 +61,6 @@ const App = () => (
                 <Route path="/research" element={<Research />} />
                 <Route path="/comparison" element={<Comparison />} />
                 <Route path="/ai-assistant" element={<AIAssistant />} />
-                <Route path="/market-pulse" element={<MarketPulse />} />
                 <Route path="/cross-market" element={<CrossMarket />} />
                 <Route path="/consumer-persona" element={<ConsumerPersona />} />
                 <Route path="/scenario-simulator" element={<ScenarioSimulator />} />

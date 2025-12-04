@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Bot, User, Volume2, VolumeX, Mic, MicOff } from "lucide-react";
+import { Send, Bot, User, Volume2, VolumeX, Mic, MicOff, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,7 +17,7 @@ export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Hello! I'm your AI research assistant powered by Groq. I can help you analyze market trends, competitor insights, and provide business intelligence based on your recent research. How can I assist you today?",
+      content: "Hello! I'm your AI research assistant. I can help you analyze market trends, competitor insights, and provide business intelligence based on your recent research. How can I assist you today?",
     },
   ]);
   const [input, setInput] = useState("");
@@ -100,7 +100,13 @@ export default function AIAssistant() {
 
       if (error) {
         console.error('Edge function error:', error);
-        throw new Error(error.message || 'Failed to get AI response');
+        
+        // Handle specific error types
+        if (error.message?.includes('rate limit') || error.message?.includes('429')) {
+          throw new Error('AI service is temporarily busy. Please wait a moment and try again.');
+        }
+        
+        throw new Error('Unable to connect to AI service. Please try again.');
       }
 
       if (data?.error) {
@@ -116,13 +122,21 @@ export default function AIAssistant() {
           speak(data.message);
         }
       } else {
-        throw new Error('No response from AI assistant');
+        throw new Error('No response received from AI assistant');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error calling AI assistant:', error);
+      
+      // Add error message to chat
+      const errorMessage = { 
+        role: "assistant" as const, 
+        content: `I apologize, but I encountered an issue: ${error.message || 'Unable to process your request'}. Please try again in a moment.`
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+      
       toast({
-        title: "Error",
-        description: "Failed to communicate with AI assistant",
+        title: "Connection Issue",
+        description: error.message || "Failed to communicate with AI assistant",
         variant: "destructive",
       });
     } finally {
@@ -164,7 +178,7 @@ export default function AIAssistant() {
           <div>
             <h1 className="text-4xl font-bold">AI Assistant</h1>
             <p className="text-muted-foreground text-lg">
-              Powered by Groq for real-time market intelligence
+              Real-time market intelligence assistant
             </p>
           </div>
           <div className="flex items-center gap-2">
