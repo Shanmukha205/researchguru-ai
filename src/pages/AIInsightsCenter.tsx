@@ -3,9 +3,10 @@ import { Lightbulb } from "lucide-react";
 import { StrengthsWeaknessesAnalyzer } from "@/components/StrengthsWeaknessesAnalyzer";
 import { RiskOpportunityDetector } from "@/components/RiskOpportunityDetector";
 import { FeatureGapAnalysis } from "@/components/FeatureGapAnalysis";
+import ProjectSelector from "@/components/ProjectSelector";
 
 const AIInsightsCenter = () => {
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
 
   return (
     <div className="min-h-screen bg-background p-6 md:p-8">
@@ -21,6 +22,11 @@ const AIInsightsCenter = () => {
           <p className="text-muted-foreground max-w-2xl mx-auto">
             Comprehensive AI-powered analysis to uncover strengths, weaknesses, risks, opportunities, and feature gaps in your product research.
           </p>
+        </div>
+
+        {/* Project Selector */}
+        <div className="flex justify-center animate-fade-in" style={{ animationDelay: "0.05s" }}>
+          <ProjectSelector onProjectSelect={setSelectedProjectId} />
         </div>
 
         {/* Insight Modules Grid */}

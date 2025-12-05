@@ -1,13 +1,15 @@
-import { useState } from "react";
-import { AlertTriangle, TrendingUp, Info, ChevronDown, ChevronUp } from "lucide-react";
+import { useState, useEffect } from "react";
+import { AlertTriangle, TrendingUp, Info, ChevronDown, ChevronUp, RefreshCw, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface RiskOpportunityDetectorProps {
-  projectId: string | null;
+  projectId: string | undefined;
 }
 
 interface DetectionItem {
@@ -19,19 +21,37 @@ interface DetectionItem {
 export const RiskOpportunityDetector = ({ projectId }: RiskOpportunityDetectorProps) => {
   const [isOpen, setIsOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [risks, setRisks] = useState<DetectionItem[]>([]);
+  const [opportunities, setOpportunities] = useState<DetectionItem[]>([]);
 
-  // Placeholder data - will be populated by AI analysis
-  const [risks, setRisks] = useState<DetectionItem[]>([
-    { text: "Emerging competitor entering market with lower pricing", confidence: 78, impact: "high" },
-    { text: "Supply chain disruptions may affect delivery times", confidence: 65, impact: "medium" },
-    { text: "Changing regulations in target market", confidence: 55, impact: "low" },
-  ]);
+  const fetchInsights = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-insights', {
+        body: { type: 'risks-opportunities', projectId }
+      });
 
-  const [opportunities, setOpportunities] = useState<DetectionItem[]>([
-    { text: "Untapped market segment showing strong demand signals", confidence: 82, impact: "high" },
-    { text: "Partnership potential with complementary brands", confidence: 70, impact: "medium" },
-    { text: "Growing trend aligns with product positioning", confidence: 88, impact: "high" },
-  ]);
+      if (error) throw error;
+
+      if (data?.risks && data?.opportunities) {
+        setRisks(data.risks);
+        setOpportunities(data.opportunities);
+      }
+    } catch (error) {
+      console.error('Error fetching risks/opportunities:', error);
+      toast.error('Failed to generate insights. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchInsights();
+  }, [projectId]);
+
+  const handleRegenerate = () => {
+    fetchInsights();
+  };
 
   const getImpactColor = (impact: string) => {
     switch (impact) {
@@ -40,12 +60,6 @@ export const RiskOpportunityDetector = ({ projectId }: RiskOpportunityDetectorPr
       case "low": return "text-green-500";
       default: return "text-muted-foreground";
     }
-  };
-
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 80) return "bg-green-500";
-    if (confidence >= 60) return "bg-yellow-500";
-    return "bg-red-500";
   };
 
   return (
@@ -74,73 +88,101 @@ export const RiskOpportunityDetector = ({ projectId }: RiskOpportunityDetectorPr
           </div>
           <CardDescription>
             Proactively identify market risks and growth opportunities
+            {projectId ? "" : " (showing aggregated insights across all projects)"}
           </CardDescription>
         </CardHeader>
 
         <CollapsibleContent>
           <CardContent className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Risks Column */}
-              <div className="space-y-3">
-                <h3 className="font-medium text-sm uppercase tracking-wide text-yellow-600 dark:text-yellow-400 flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  Detected Risks
-                </h3>
-                <ul className="space-y-3">
-                  {risks.map((item, index) => (
-                    <li 
-                      key={index}
-                      className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900/50 space-y-2"
-                    >
-                      <div className="flex items-start gap-2">
-                        <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
-                        <span className="text-sm">{item.text}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground">Confidence:</span>
-                          <Progress value={item.confidence} className="w-16 h-1.5" />
-                          <span className="font-medium">{item.confidence}%</span>
-                        </div>
-                        <span className={`font-medium uppercase ${getImpactColor(item.impact)}`}>
-                          {item.impact} impact
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <span className="ml-2 text-muted-foreground">Detecting risks and opportunities...</span>
               </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Risks Column */}
+                <div className="space-y-3">
+                  <h3 className="font-medium text-sm uppercase tracking-wide text-yellow-600 dark:text-yellow-400 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    Detected Risks
+                  </h3>
+                  {risks.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No risks detected yet. Run more research to identify potential risks.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {risks.map((item, index) => (
+                        <li 
+                          key={index}
+                          className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900/50 space-y-2"
+                        >
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
+                            <span className="text-sm">{item.text}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">Confidence:</span>
+                              <Progress value={item.confidence} className="w-16 h-1.5" />
+                              <span className="font-medium">{item.confidence}%</span>
+                            </div>
+                            <span className={`font-medium uppercase ${getImpactColor(item.impact)}`}>
+                              {item.impact} impact
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
 
-              {/* Opportunities Column */}
-              <div className="space-y-3">
-                <h3 className="font-medium text-sm uppercase tracking-wide text-blue-600 dark:text-blue-400 flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" />
-                  Opportunities
-                </h3>
-                <ul className="space-y-3">
-                  {opportunities.map((item, index) => (
-                    <li 
-                      key={index}
-                      className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 space-y-2"
-                    >
-                      <div className="flex items-start gap-2">
-                        <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
-                        <span className="text-sm">{item.text}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground">Confidence:</span>
-                          <Progress value={item.confidence} className="w-16 h-1.5" />
-                          <span className="font-medium">{item.confidence}%</span>
-                        </div>
-                        <span className={`font-medium uppercase ${getImpactColor(item.impact)}`}>
-                          {item.impact} potential
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                {/* Opportunities Column */}
+                <div className="space-y-3">
+                  <h3 className="font-medium text-sm uppercase tracking-wide text-blue-600 dark:text-blue-400 flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" />
+                    Opportunities
+                  </h3>
+                  {opportunities.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No opportunities detected yet. Run more research to identify growth potential.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {opportunities.map((item, index) => (
+                        <li 
+                          key={index}
+                          className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 space-y-2"
+                        >
+                          <div className="flex items-start gap-2">
+                            <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                            <span className="text-sm">{item.text}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">Confidence:</span>
+                              <Progress value={item.confidence} className="w-16 h-1.5" />
+                              <span className="font-medium">{item.confidence}%</span>
+                            </div>
+                            <span className={`font-medium uppercase ${getImpactColor(item.impact)}`}>
+                              {item.impact} potential
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <Button 
+                onClick={handleRegenerate} 
+                disabled={isLoading}
+                variant="outline"
+                size="sm"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+                Regenerate Insights
+              </Button>
             </div>
           </CardContent>
         </CollapsibleContent>
