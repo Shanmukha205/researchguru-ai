@@ -229,7 +229,7 @@ function parseAPIResponse(content: string): any {
   }
 }
 
-// SENTIMENT AGENT - API DATA ONLY
+// SENTIMENT AGENT - STRICT API MODE
 async function runSentimentAgent(productName: string, companyName: string, perplexityKey: string, groqKey?: string) {
   console.log('Running sentiment agent for:', productName);
   
@@ -248,8 +248,7 @@ Return a JSON object with ONLY data found in your search results:
   ],
   "sourceDomains": [<list of domains where reviews were found>],
   "totalReviewsFound": <number of reviews found>,
-  "confidence": <0-100 based on amount of data found>,
-  "dataStatus": "complete" | "partial" | "insufficient"
+  "rawDataSummary": "<brief summary of what was actually retrieved from API>"
 }
 
 CRITICAL: Only include data actually found. Use null for missing fields. Do NOT fabricate reviews or scores.`;
@@ -260,7 +259,11 @@ CRITICAL: Only include data actually found. Use null for missing fields. Do NOT 
     
     if (!parsed) {
       return {
-        _apiError: 'No valid data returned from API',
+        _apiError: 'Unable to generate insights due to missing API data. Please verify API keys or re-trigger the pipeline.',
+        apiSourcesUsed: ['Perplexity Sonar API'],
+        rawAPISummary: 'No valid data returned from API',
+        processedInsights: null,
+        missingDataReport: ['overallScore', 'positive', 'negative', 'neutral', 'positiveThemes', 'negativeThemes', 'reviews'],
         overallScore: null,
         positive: null,
         negative: null,
@@ -270,19 +273,35 @@ CRITICAL: Only include data actually found. Use null for missing fields. Do NOT 
         reviews: [],
         sourceDomains: [],
         confidence: 0,
-        dataStatus: 'insufficient',
-        _rawResponse: content?.substring(0, 500)
+        dataStatus: 'insufficient'
       };
     }
 
     // Validate that we have real data
     const hasRealData = parsed.reviews?.length > 0 || parsed.sourceDomains?.length > 0 || parsed.overallScore !== null;
     
+    // Build missing data report
+    const missingFields = [];
+    if (parsed.overallScore === null || parsed.overallScore === undefined) missingFields.push('overallScore');
+    if (parsed.positive === null || parsed.positive === undefined) missingFields.push('positive');
+    if (parsed.negative === null || parsed.negative === undefined) missingFields.push('negative');
+    if (!parsed.positiveThemes?.length) missingFields.push('positiveThemes');
+    if (!parsed.negativeThemes?.length) missingFields.push('negativeThemes');
+    if (!parsed.reviews?.length) missingFields.push('reviews');
+    
     return {
       ...parsed,
+      apiSourcesUsed: ['Perplexity Sonar API'],
+      rawAPISummary: parsed.rawDataSummary || `Retrieved ${parsed.reviews?.length || 0} reviews from ${parsed.sourceDomains?.length || 0} sources`,
+      processedInsights: hasRealData ? {
+        sentimentLabel: parsed.overallScore >= 70 ? 'positive' : parsed.overallScore >= 40 ? 'mixed' : 'negative',
+        dominantThemes: [...(parsed.positiveThemes || []).slice(0, 3), ...(parsed.negativeThemes || []).slice(0, 3)],
+        reviewCount: parsed.reviews?.length || parsed.totalReviewsFound || 0
+      } : null,
+      missingDataReport: missingFields.length > 0 ? missingFields : null,
       confidence: parsed.confidence || (hasRealData ? 70 : 20),
       confidenceLevel: hasRealData ? 'High' : 'Low',
-      dataStatus: hasRealData ? (parsed.dataStatus || 'complete') : 'insufficient',
+      dataStatus: hasRealData ? 'complete' : 'insufficient',
       apiEndpoint: 'Perplexity Sonar',
       resultsCount: parsed.reviews?.length || 0,
       _apiVerified: true
@@ -290,7 +309,11 @@ CRITICAL: Only include data actually found. Use null for missing fields. Do NOT 
   } catch (error) {
     console.error('Sentiment agent API error:', error);
     return {
-      _apiError: error instanceof Error ? error.message : 'API call failed',
+      _apiError: error instanceof Error ? error.message : 'Unable to generate insights due to missing API data. Please verify API keys or re-trigger the pipeline.',
+      apiSourcesUsed: ['Perplexity Sonar API'],
+      rawAPISummary: 'API call failed',
+      processedInsights: null,
+      missingDataReport: ['All fields - API error'],
       overallScore: null,
       positive: null,
       negative: null,
@@ -305,7 +328,7 @@ CRITICAL: Only include data actually found. Use null for missing fields. Do NOT 
   }
 }
 
-// COMPETITOR AGENT - API DATA ONLY  
+// COMPETITOR AGENT - STRICT API MODE  
 async function runCompetitorAgent(productName: string, companyName: string, perplexityKey: string, groqKey?: string) {
   console.log('Running competitor agent for:', productName);
   
@@ -328,11 +351,10 @@ Return a JSON object with ONLY data found in your search results:
   ],
   "sourceDomains": [<list of domains searched>],
   "totalCompetitorsFound": <number>,
-  "confidence": <0-100 based on data completeness>,
-  "dataStatus": "complete" | "partial" | "insufficient"
+  "rawDataSummary": "<brief summary of what was actually retrieved from API>"
 }
 
-CRITICAL: Only include REAL competitors found in search results. Do NOT invent products, prices, or ratings. If price not found, set price to null.`;
+CRITICAL: Only include REAL competitors found in search results. Do NOT invent products, prices, or ratings. If price not found, set price to null. Never output "N/A".`;
 
   try {
     const content = await callPerplexityAPI(query, perplexityKey);
@@ -340,12 +362,15 @@ CRITICAL: Only include REAL competitors found in search results. Do NOT invent p
     
     if (!parsed || !parsed.competitors) {
       return {
-        _apiError: 'No competitor data returned from API',
+        _apiError: 'API returned no competitors. No data available.',
+        apiSourcesUsed: ['Perplexity Sonar API'],
+        rawAPISummary: 'No competitor data returned from API',
+        processedInsights: null,
+        missingDataReport: ['competitors', 'pricing', 'ratings'],
         competitors: [],
         sourceDomains: [],
         overallConfidence: 0,
-        dataStatus: 'insufficient',
-        _rawResponse: content?.substring(0, 500)
+        dataStatus: 'insufficient'
       };
     }
 
@@ -355,17 +380,34 @@ CRITICAL: Only include REAL competitors found in search results. Do NOT invent p
     );
 
     const hasRealData = validCompetitors.length > 0;
+    
+    // Build missing data report for each competitor
+    const missingFields = [];
+    validCompetitors.forEach((c: any) => {
+      if (c.price === null || c.price === undefined) missingFields.push(`API returned no price for ${c.name}`);
+      if (c.rating === null || c.rating === undefined) missingFields.push(`API returned no rating for ${c.name}`);
+    });
+    if (!hasRealData) missingFields.push('No competitors found in API results');
 
     return {
       competitors: validCompetitors.map((c: any) => ({
         ...c,
-        priceConfidence: c.price && c.price !== 'null' && c.priceSource ? 80 : 20,
+        priceConfidence: c.price && c.price !== null && c.priceSource ? 80 : 0,
+        ratingConfidence: c.rating !== null && c.ratingSource ? 80 : 0,
         confidenceLevel: c.priceSource && c.ratingSource ? 'High' : c.priceSource || c.ratingSource ? 'Medium' : 'Low',
         sourceEvidence: c.priceSource || c.ratingSource || 'No source available'
       })),
+      apiSourcesUsed: ['Perplexity Sonar API'],
+      rawAPISummary: parsed.rawDataSummary || `Found ${validCompetitors.length} competitors from ${parsed.sourceDomains?.length || 0} sources`,
+      processedInsights: hasRealData ? {
+        competitorCount: validCompetitors.length,
+        priceRangeAvailable: validCompetitors.filter((c: any) => c.price !== null).length,
+        topCompetitors: validCompetitors.slice(0, 3).map((c: any) => c.name)
+      } : null,
+      missingDataReport: missingFields.length > 0 ? missingFields : null,
       sourceDomains: parsed.sourceDomains || [],
-      overallConfidence: hasRealData ? (parsed.confidence || 70) : 0,
-      dataStatus: hasRealData ? (parsed.dataStatus || 'complete') : 'insufficient',
+      overallConfidence: hasRealData ? 70 : 0,
+      dataStatus: hasRealData ? 'complete' : 'insufficient',
       apiEndpoint: 'Perplexity Sonar',
       resultsCount: validCompetitors.length,
       _apiVerified: true
@@ -373,7 +415,11 @@ CRITICAL: Only include REAL competitors found in search results. Do NOT invent p
   } catch (error) {
     console.error('Competitor agent API error:', error);
     return {
-      _apiError: error instanceof Error ? error.message : 'API call failed',
+      _apiError: error instanceof Error ? error.message : 'Unable to generate insights due to missing API data. Please verify API keys or re-trigger the pipeline.',
+      apiSourcesUsed: ['Perplexity Sonar API'],
+      rawAPISummary: 'API call failed',
+      processedInsights: null,
+      missingDataReport: ['All fields - API error'],
       competitors: [],
       sourceDomains: [],
       overallConfidence: 0,
@@ -382,7 +428,7 @@ CRITICAL: Only include REAL competitors found in search results. Do NOT invent p
   }
 }
 
-// TREND AGENT - API DATA ONLY
+// TREND AGENT - STRICT API MODE
 async function runTrendAgent(productName: string, companyName: string, perplexityKey: string, groqKey?: string) {
   console.log('Running trend agent for:', productName);
   
@@ -405,9 +451,8 @@ Return a JSON object with ONLY data found in your search results:
   "trendDirection": "rising" | "stable" | "declining" | "unknown",
   "trendScore": <0-100 based on search volume and mentions, or null>,
   "sourceDomains": [<domains searched>],
-  "confidence": <0-100>,
-  "dataStatus": "complete" | "partial" | "insufficient",
-  "searchDate": "${currentDate}"
+  "searchDate": "${currentDate}",
+  "rawDataSummary": "<brief summary of what was actually retrieved from API>"
 }
 
 CRITICAL: Only include data actually found. Do NOT invent news headlines or trends. If trend data not found, set trendDirection to "unknown".`;
@@ -418,7 +463,11 @@ CRITICAL: Only include data actually found. Do NOT invent news headlines or tren
     
     if (!parsed) {
       return {
-        _apiError: 'No trend data returned from API',
+        _apiError: 'No API data available for this field.',
+        apiSourcesUsed: ['Perplexity Sonar API'],
+        rawAPISummary: 'No trend data returned from API',
+        processedInsights: null,
+        missingDataReport: ['trendingKeywords', 'recentNews', 'marketMentions', 'trendDirection'],
         trendingKeywords: [],
         emergingTopics: [],
         recentNews: [],
@@ -427,8 +476,7 @@ CRITICAL: Only include data actually found. Do NOT invent news headlines or tren
         trendScore: null,
         sourceDomains: [],
         confidence: 0,
-        dataStatus: 'insufficient',
-        _rawResponse: content?.substring(0, 500)
+        dataStatus: 'insufficient'
       };
     }
 
@@ -437,12 +485,28 @@ CRITICAL: Only include data actually found. Do NOT invent news headlines or tren
       (parsed.recentNews?.length > 0) ||
       (parsed.marketMentions?.length > 0);
 
+    // Build missing data report
+    const missingFields = [];
+    if (!parsed.trendingKeywords?.length) missingFields.push('trendingKeywords');
+    if (!parsed.recentNews?.length) missingFields.push('recentNews');
+    if (!parsed.marketMentions?.length) missingFields.push('marketMentions');
+    if (parsed.trendDirection === 'unknown') missingFields.push('trendDirection');
+    if (parsed.trendScore === null) missingFields.push('trendScore');
+
     return {
       ...parsed,
+      apiSourcesUsed: ['Perplexity Sonar API'],
+      rawAPISummary: parsed.rawDataSummary || `Found ${parsed.recentNews?.length || 0} news items, ${parsed.trendingKeywords?.length || 0} keywords from ${parsed.sourceDomains?.length || 0} sources`,
+      processedInsights: hasRealData ? {
+        trendSummary: parsed.trendDirection !== 'unknown' ? `Market trend is ${parsed.trendDirection}` : 'Trend direction undetermined',
+        keyTopics: parsed.trendingKeywords?.slice(0, 5) || [],
+        newsCount: parsed.recentNews?.length || 0
+      } : null,
+      missingDataReport: missingFields.length > 0 ? missingFields : null,
       trendScore: parsed.trendScore || (hasRealData ? 60 : null),
       confidence: parsed.confidence || (hasRealData ? 70 : 20),
       confidenceLevel: hasRealData ? 'High' : 'Low',
-      dataStatus: hasRealData ? (parsed.dataStatus || 'complete') : 'insufficient',
+      dataStatus: hasRealData ? 'complete' : 'insufficient',
       apiEndpoint: 'Perplexity Sonar',
       resultsCount: (parsed.recentNews?.length || 0) + (parsed.marketMentions?.length || 0),
       _apiVerified: true
@@ -450,7 +514,11 @@ CRITICAL: Only include data actually found. Do NOT invent news headlines or tren
   } catch (error) {
     console.error('Trend agent API error:', error);
     return {
-      _apiError: error instanceof Error ? error.message : 'API call failed',
+      _apiError: error instanceof Error ? error.message : 'Unable to generate insights due to missing API data. Please verify API keys or re-trigger the pipeline.',
+      apiSourcesUsed: ['Perplexity Sonar API'],
+      rawAPISummary: 'API call failed',
+      processedInsights: null,
+      missingDataReport: ['All fields - API error'],
       trendingKeywords: [],
       emergingTopics: [],
       recentNews: [],
