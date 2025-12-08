@@ -3,28 +3,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Volume2, VolumeX, Mic, MicOff, AlertCircle, Database, Sparkles } from "lucide-react";
+import { Send, Bot, User, Volume2, VolumeX, Mic, MicOff, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import ProjectSelector from "@/components/ProjectSelector";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
-  context?: {
-    vectorMatchCount?: number;
-    hasAgentData?: boolean;
-    insufficientData?: boolean;
-  };
 }
 
 export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Hello! I'm your AI research assistant powered by vector search and real-time data. I can help you analyze market trends, competitor insights, and provide business intelligence based on your research. Select a project to get project-specific answers, or ask general questions. How can I assist you today?",
+      content: "Hello! I'm your AI research assistant. I can help you analyze market trends, competitor insights, and provide business intelligence based on your recent research. How can I assist you today?",
     },
   ]);
   const [input, setInput] = useState("");
@@ -32,7 +25,6 @@ export default function AIAssistant() {
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const { toast } = useToast();
   const { user } = useAuth();
   const recognitionRef = useRef<any>(null);
@@ -99,12 +91,10 @@ export default function AIAssistant() {
     setIsLoading(true);
 
     try {
-      // Call enhanced chat-assistant with vector search and project context
       const { data, error } = await supabase.functions.invoke('chat-assistant', {
         body: { 
-          messages: [...messages.map(m => ({ role: m.role, content: m.content })), { role: 'user', content: input }],
-          userId: user?.id,
-          projectId: selectedProjectId
+          messages: [...messages, userMessage],
+          userId: user?.id 
         }
       });
 
@@ -124,11 +114,7 @@ export default function AIAssistant() {
       }
 
       if (data && data.message) {
-        const assistantMessage: Message = { 
-          role: "assistant", 
-          content: data.message,
-          context: data.context
-        };
+        const assistantMessage = { role: "assistant" as const, content: data.message };
         setMessages((prev) => [...prev, assistantMessage]);
         
         // Speak the response if voice is enabled
@@ -188,11 +174,11 @@ export default function AIAssistant() {
   return (
     <div className="p-8 h-screen flex flex-col animate-fade-in">
       <div className="space-y-2 mb-6">
-        <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between">
           <div>
             <h1 className="text-4xl font-bold">AI Assistant</h1>
             <p className="text-muted-foreground text-lg">
-              Vector-powered market intelligence assistant
+              Real-time market intelligence assistant
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -222,17 +208,6 @@ export default function AIAssistant() {
             </Button>
           </div>
         </div>
-        
-        {/* Project Selector for context-aware responses */}
-        <div className="flex items-center gap-3 pt-2">
-          <ProjectSelector onProjectSelect={setSelectedProjectId} />
-          {selectedProjectId && (
-            <Badge variant="secondary" className="flex items-center gap-1">
-              <Database className="h-3 w-3" />
-              Vector search active
-            </Badge>
-          )}
-        </div>
       </div>
 
       <Card className="glass-effect border-border/50 flex-1 flex flex-col">
@@ -240,10 +215,6 @@ export default function AIAssistant() {
           <CardTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
             Chat Assistant
-            <Badge variant="outline" className="ml-2 flex items-center gap-1">
-              <Sparkles className="h-3 w-3" />
-              RAG-Enhanced
-            </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col gap-4">
@@ -269,27 +240,6 @@ export default function AIAssistant() {
                     }`}
                   >
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
-                    {/* Show context badges for assistant messages with vector data */}
-                    {message.role === "assistant" && message.context && (
-                      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/30">
-                        {message.context.vectorMatchCount !== undefined && message.context.vectorMatchCount > 0 && (
-                          <Badge variant="outline" className="text-xs flex items-center gap-1">
-                            <Database className="h-3 w-3" />
-                            {message.context.vectorMatchCount} vectors
-                          </Badge>
-                        )}
-                        {message.context.hasAgentData && (
-                          <Badge variant="outline" className="text-xs">
-                            Agent data
-                          </Badge>
-                        )}
-                        {message.context.insufficientData && (
-                          <Badge variant="destructive" className="text-xs">
-                            Limited data
-                          </Badge>
-                        )}
-                      </div>
-                    )}
                   </div>
                   {message.role === "user" && (
                     <div className="h-8 w-8 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">

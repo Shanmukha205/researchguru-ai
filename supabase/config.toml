@@ -14,12 +14,3 @@ verify_jwt = false
 
 [functions.send-collaboration-invite]
 verify_jwt = false
-
-[functions.generate-embeddings]
-verify_jwt = false
-
-[functions.vector-search]
-verify_jwt = false
-
-[functions.orchestrate-research]
-verify_jwt = false
