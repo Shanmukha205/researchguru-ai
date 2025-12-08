@@ -297,6 +297,60 @@ export type Database = {
           },
         ]
       }
+      research_embeddings: {
+        Row: {
+          agent_result_id: string | null
+          content_chunk: string
+          content_text: string
+          content_type: string
+          created_at: string
+          embedding: string | null
+          id: string
+          metadata: Json | null
+          project_id: string
+          run_id: string | null
+        }
+        Insert: {
+          agent_result_id?: string | null
+          content_chunk: string
+          content_text: string
+          content_type: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          metadata?: Json | null
+          project_id: string
+          run_id?: string | null
+        }
+        Update: {
+          agent_result_id?: string | null
+          content_chunk?: string
+          content_text?: string
+          content_type?: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          metadata?: Json | null
+          project_id?: string
+          run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "research_embeddings_agent_result_id_fkey"
+            columns: ["agent_result_id"]
+            isOneToOne: false
+            referencedRelation: "agent_results"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "research_embeddings_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "research_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       research_notes: {
         Row: {
           content: string
@@ -361,6 +415,56 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      research_runs: {
+        Row: {
+          agents_triggered: Json | null
+          completed_at: string | null
+          embeddings_count: number | null
+          error_message: string | null
+          feedback_loop_triggered: boolean | null
+          id: string
+          metadata: Json | null
+          project_id: string
+          started_at: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          agents_triggered?: Json | null
+          completed_at?: string | null
+          embeddings_count?: number | null
+          error_message?: string | null
+          feedback_loop_triggered?: boolean | null
+          id?: string
+          metadata?: Json | null
+          project_id: string
+          started_at?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          agents_triggered?: Json | null
+          completed_at?: string | null
+          embeddings_count?: number | null
+          error_message?: string | null
+          feedback_loop_triggered?: boolean | null
+          id?: string
+          metadata?: Json | null
+          project_id?: string
+          started_at?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "research_runs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "research_projects"
             referencedColumns: ["id"]
           },
         ]
@@ -683,6 +787,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_data_sufficiency: {
+        Args: { p_min_embeddings?: number; p_project_id: string }
+        Returns: Json
+      }
       has_project_access: {
         Args: {
           _min_role?: Database["public"]["Enums"]["project_role"]
@@ -697,6 +805,23 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      match_embeddings: {
+        Args: {
+          filter_project_id?: string
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          content_chunk: string
+          content_text: string
+          content_type: string
+          id: string
+          metadata: Json
+          project_id: string
+          similarity: number
+        }[]
       }
     }
     Enums: {
