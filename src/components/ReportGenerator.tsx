@@ -67,10 +67,10 @@ export const ReportGenerator = ({ data }: { data: ReportData }) => {
       yPos += 8;
 
       const tableData = data.agentResults.map(result => [
-        result.agent_type?.toUpperCase() || 'N/A',
-        result.status === 'completed' ? '✓ Completed' : result.status || 'N/A',
-        result.results?.confidence ? `${result.results.confidence}%` : 'N/A',
-        result.created_at ? new Date(result.created_at).toLocaleDateString() : 'N/A'
+        result.agent_type?.toUpperCase() || 'Unknown',
+        result.status === 'completed' ? '✓ Completed' : result.status || 'Pending',
+        result.results?.confidence ? `${result.results.confidence}%` : 'No data',
+        result.created_at ? new Date(result.created_at).toLocaleDateString() : 'No date'
       ]);
 
       autoTable(doc, {
@@ -167,11 +167,11 @@ export const ReportGenerator = ({ data }: { data: ReportData }) => {
         yPos += 10;
 
         const competitorTableData = competitorResult.results.competitors.slice(0, 8).map((comp: any) => [
-          comp.name || 'N/A',
-          comp.company || 'N/A',
-          comp.price || 'N/A',
-          comp.rating ? `${comp.rating}/5` : 'N/A',
-          comp.confidence ? `${comp.confidence}%` : 'N/A'
+          comp.name || 'Unknown',
+          comp.company || 'Unknown',
+          comp.price !== null && comp.price !== undefined && comp.price !== '' ? comp.price : 'No API data',
+          comp.rating !== null && comp.rating !== undefined ? `${comp.rating}/5` : 'No API data',
+          comp.confidence ? `${comp.confidence}%` : 'No data'
         ]);
 
         autoTable(doc, {
@@ -204,11 +204,11 @@ export const ReportGenerator = ({ data }: { data: ReportData }) => {
         const trend = trendResult.results;
         doc.setFontSize(10);
         
-        doc.text(`Trend Score: ${trend.trendScore || 'N/A'}`, 20, yPos);
-        doc.text(`Growth Rate: ${trend.growthRate || 'N/A'}%`, 100, yPos);
+        doc.text(`Trend Score: ${trend.trendScore !== null && trend.trendScore !== undefined ? trend.trendScore : 'No API data'}`, 20, yPos);
+        doc.text(`Growth Rate: ${trend.growthRate !== null && trend.growthRate !== undefined ? trend.growthRate + '%' : 'No API data'}`, 100, yPos);
         yPos += 8;
         
-        doc.text(`Demand Pattern: ${trend.demandPattern || 'N/A'}`, 20, yPos);
+        doc.text(`Demand Pattern: ${trend.demandPattern && trend.demandPattern !== 'unknown' ? trend.demandPattern : 'No API data'}`, 20, yPos);
         yPos += 10;
 
         if (trend.keywords?.length > 0) {
@@ -373,7 +373,7 @@ export const ReportGenerator = ({ data }: { data: ReportData }) => {
         [''],
         ['Project Details'],
         ['Product/Company', data.projectName],
-        ['Brand', data.companyName || 'N/A'],
+        ['Brand', data.companyName || 'Not specified'],
         ['Generated', new Date().toLocaleString()],
         ['Research Mode', data.researchMode || 'Standard'],
         [''],
@@ -383,10 +383,10 @@ export const ReportGenerator = ({ data }: { data: ReportData }) => {
 
       // Agent Results Sheet
       const resultsData = data.agentResults.map(result => ({
-        'Agent Type': result.agent_type?.toUpperCase() || 'N/A',
-        'Status': result.status || 'N/A',
-        'Confidence Score': result.results?.confidence ? `${result.results.confidence}%` : 'N/A',
-        'Created At': result.created_at ? new Date(result.created_at).toLocaleString() : 'N/A',
+        'Agent Type': result.agent_type?.toUpperCase() || 'Unknown',
+        'Status': result.status || 'Pending',
+        'Confidence Score': result.results?.confidence ? `${result.results.confidence}%` : 'No data',
+        'Created At': result.created_at ? new Date(result.created_at).toLocaleString() : 'No date',
         'Error': result.error_message || 'None'
       }));
       const ws1 = XLSX.utils.json_to_sheet(resultsData);
@@ -399,10 +399,10 @@ export const ReportGenerator = ({ data }: { data: ReportData }) => {
           ['SENTIMENT ANALYSIS'],
           [''],
           ['Score Breakdown'],
-          ['Positive', `${sentimentResult.results.positive || 0}%`],
-          ['Neutral', `${sentimentResult.results.neutral || 0}%`],
-          ['Negative', `${sentimentResult.results.negative || 0}%`],
-          ['Overall Score', sentimentResult.results.overallScore || 'N/A'],
+          ['Positive', sentimentResult.results.positive !== null && sentimentResult.results.positive !== undefined ? `${sentimentResult.results.positive}%` : 'No API data'],
+          ['Neutral', sentimentResult.results.neutral !== null && sentimentResult.results.neutral !== undefined ? `${sentimentResult.results.neutral}%` : 'No API data'],
+          ['Negative', sentimentResult.results.negative !== null && sentimentResult.results.negative !== undefined ? `${sentimentResult.results.negative}%` : 'No API data'],
+          ['Overall Score', sentimentResult.results.overallScore !== null && sentimentResult.results.overallScore !== undefined ? sentimentResult.results.overallScore : 'No API data'],
           [''],
         ];
         
@@ -429,12 +429,12 @@ export const ReportGenerator = ({ data }: { data: ReportData }) => {
       const competitorResult = data.agentResults.find(r => r.agent_type === 'competitor');
       if (competitorResult?.results?.competitors?.length) {
         const competitorData = competitorResult.results.competitors.map((comp: any) => ({
-          'Product': comp.name || 'N/A',
-          'Company': comp.company || 'N/A',
-          'Price': comp.price || 'N/A',
-          'Rating': comp.rating || 'N/A',
-          'Market Share': comp.marketShare || 'N/A',
-          'Confidence': comp.confidence ? `${comp.confidence}%` : 'N/A'
+          'Product': comp.name || 'Unknown',
+          'Company': comp.company || 'Unknown',
+          'Price': comp.price !== null && comp.price !== undefined && comp.price !== '' ? comp.price : 'No API data',
+          'Rating': comp.rating !== null && comp.rating !== undefined ? comp.rating : 'No API data',
+          'Market Share': comp.marketShare !== null && comp.marketShare !== undefined ? comp.marketShare : 'No API data',
+          'Confidence': comp.confidence ? `${comp.confidence}%` : 'No data'
         }));
         const wsCompetitor = XLSX.utils.json_to_sheet(competitorData);
         XLSX.utils.book_append_sheet(wb, wsCompetitor, 'Competitor Analysis');
@@ -446,9 +446,9 @@ export const ReportGenerator = ({ data }: { data: ReportData }) => {
         const trendRows: any[] = [
           ['TREND ANALYSIS'],
           [''],
-          ['Trend Score', trendResult.results.trendScore || 'N/A'],
-          ['Growth Rate', `${trendResult.results.growthRate || 0}%`],
-          ['Demand Pattern', trendResult.results.demandPattern || 'N/A'],
+          ['Trend Score', trendResult.results.trendScore !== null && trendResult.results.trendScore !== undefined ? trendResult.results.trendScore : 'No API data'],
+          ['Growth Rate', trendResult.results.growthRate !== null && trendResult.results.growthRate !== undefined ? `${trendResult.results.growthRate}%` : 'No API data'],
+          ['Demand Pattern', trendResult.results.demandPattern && trendResult.results.demandPattern !== 'unknown' ? trendResult.results.demandPattern : 'No API data'],
           [''],
         ];
         

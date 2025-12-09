@@ -719,7 +719,11 @@ function OutcomeCard({
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-3 bg-background/50 rounded-lg border border-border/30">
                   <p className="text-xs text-muted-foreground mb-1">Overall Score</p>
-                  <p className="text-2xl font-bold text-primary">{results.overallScore || 'N/A'}</p>
+                  <p className="text-2xl font-bold text-primary">
+                    {results.overallScore !== null && results.overallScore !== undefined 
+                      ? results.overallScore 
+                      : <span className="text-sm text-muted-foreground">No API data</span>}
+                  </p>
                 </div>
                 <div className="p-3 bg-background/50 rounded-lg border border-border/30">
                   <p className="text-xs text-muted-foreground mb-2">Sentiment Breakdown</p>
@@ -794,8 +798,16 @@ function OutcomeCard({
                     )}
                   </div>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                    <span className="font-medium">Price: {comp.price || 'N/A'}</span>
-                    <span>Rating: {comp.rating || 'N/A'}/5</span>
+                    <span className="font-medium">
+                      Price: {comp.price !== null && comp.price !== undefined && comp.price !== '' 
+                        ? comp.price 
+                        : <span className="text-muted-foreground italic">No API data</span>}
+                    </span>
+                    <span>
+                      Rating: {comp.rating !== null && comp.rating !== undefined 
+                        ? `${comp.rating}/5` 
+                        : <span className="text-muted-foreground italic">No API data</span>}
+                    </span>
                   </div>
                   {comp.sourceSnippet && (
                     <p className="mt-2 text-xs text-muted-foreground italic border-l-2 border-primary/30 pl-2">
@@ -819,7 +831,11 @@ function OutcomeCard({
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-3 bg-background/50 rounded-lg border border-border/30">
                   <p className="text-xs text-muted-foreground mb-1">Trend Score</p>
-                  <p className="text-2xl font-bold text-primary">{results.trendScore || 'N/A'}</p>
+                  <p className="text-2xl font-bold text-primary">
+                    {results.trendScore !== null && results.trendScore !== undefined 
+                      ? results.trendScore 
+                      : <span className="text-sm text-muted-foreground">No API data</span>}
+                  </p>
                 </div>
                 <div className="p-3 bg-background/50 rounded-lg border border-border/30">
                   <p className="text-xs text-muted-foreground mb-1">Growth Rate</p>
