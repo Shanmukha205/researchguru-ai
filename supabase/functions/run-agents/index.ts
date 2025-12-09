@@ -233,25 +233,34 @@ function parseAPIResponse(content: string): any {
 async function runSentimentAgent(productName: string, companyName: string, perplexityKey: string, groqKey?: string) {
   console.log('Running sentiment agent for:', productName);
   
-  const query = `Search for customer reviews and sentiment for "${productName}" ${companyName ? `by ${companyName}` : ''}.
+  const query = `Search for customer reviews and sentiment analysis for "${productName}" ${companyName ? `by ${companyName}` : ''}.
+
+Search on sites like Amazon, Flipkart, Best Buy, Google Reviews, Trustpilot, Reddit, tech review sites, etc.
 
 Return a JSON object with ONLY data found in your search results:
 {
-  "overallScore": <number 0-100 from review averages, or null if not found>,
-  "positive": <percentage of positive reviews found, or null>,
-  "negative": <percentage of negative reviews found, or null>,
-  "neutral": <percentage of neutral reviews found, or null>,
-  "positiveThemes": [<actual positive themes mentioned in reviews>],
-  "negativeThemes": [<actual negative themes mentioned in reviews>],
+  "overallScore": <number 0-100 calculated from average ratings, e.g. 4.2/5 = 84>,
+  "positive": <percentage of positive reviews - calculate from actual review breakdown>,
+  "negative": <percentage of negative reviews - calculate from actual review breakdown>,
+  "neutral": <percentage of neutral reviews - calculate from actual review breakdown>,
+  "positiveThemes": [<actual positive points mentioned in reviews like "good battery life", "comfortable fit">],
+  "negativeThemes": [<actual negative points mentioned in reviews like "poor sound quality", "connectivity issues">],
   "reviews": [
-    {"source": "<website>", "rating": <1-5>, "text": "<actual review snippet>", "date": "<date if available>"}
+    {"source": "<website name>", "rating": <1-5 decimal>, "text": "<actual review snippet found>", "date": "<date if available>"}
   ],
-  "sourceDomains": [<list of domains where reviews were found>],
-  "totalReviewsFound": <number of reviews found>,
+  "sourceDomains": [<list of domains where reviews were found e.g. "amazon.com", "reddit.com">],
+  "averageRating": <average rating from all sources as decimal e.g. 4.2>,
+  "totalReviewsFound": <total number of reviews analyzed>,
   "rawDataSummary": "<brief summary of what was actually retrieved from API>"
 }
 
-CRITICAL: Only include data actually found. Use null for missing fields. Do NOT fabricate reviews or scores.`;
+IMPORTANT RULES:
+1. ONLY include data actually found in search results
+2. Calculate percentages from real review data (e.g., if 80% of reviews are 4-5 stars, positive = 80)
+3. Extract themes from actual review text, not assumptions
+4. If no reviews found, set values to null
+5. NEVER fabricate review scores or percentages
+6. Use null for missing fields, NEVER use "N/A"`;
 
   try {
     const content = await callPerplexityAPI(query, perplexityKey);
@@ -334,27 +343,40 @@ async function runCompetitorAgent(productName: string, companyName: string, perp
   
   const query = `Search for competitors and alternatives to "${productName}" ${companyName ? `by ${companyName}` : ''}.
 
+I need you to find REAL pricing and rating data from actual e-commerce sites, review sites, and product pages.
+
+Search on sites like Amazon, Flipkart, Best Buy, official product websites, tech review sites like TechRadar, CNET, GSMArena, etc.
+
 Return a JSON object with ONLY data found in your search results:
 {
   "competitors": [
     {
-      "name": "<actual competitor product name>",
-      "company": "<actual company name>",
-      "price": "<actual price found, or null if not found>",
-      "priceSource": "<domain where price was found>",
-      "rating": <rating out of 5 if found, or null>,
-      "ratingSource": "<domain where rating was found>",
-      "features": [<actual features mentioned>],
-      "advantages": [<advantages mentioned in comparisons>],
-      "disadvantages": [<disadvantages mentioned>]
+      "name": "<actual competitor product name found>",
+      "company": "<actual company/brand name>",
+      "price": "<exact price found e.g. '$29.99' or '₹1,299' - include currency symbol>",
+      "priceSource": "<exact website/URL where price was found>",
+      "rating": <rating as decimal e.g. 4.2 or 3.8 - from actual reviews>,
+      "ratingSource": "<exact website where rating was found e.g. Amazon, Flipkart>",
+      "reviewCount": <number of reviews if available>,
+      "features": [<actual key features listed in product descriptions>],
+      "advantages": [<advantages over the searched product>],
+      "disadvantages": [<disadvantages compared to searched product>]
     }
   ],
-  "sourceDomains": [<list of domains searched>],
+  "sourceDomains": [<list of domains actually searched e.g. "amazon.com", "flipkart.com">],
   "totalCompetitorsFound": <number>,
-  "rawDataSummary": "<brief summary of what was actually retrieved from API>"
+  "searchQuery": "${productName} alternatives competitors price comparison",
+  "rawDataSummary": "<brief summary of actual data found>"
 }
 
-CRITICAL: Only include REAL competitors found in search results. Do NOT invent products, prices, or ratings. If price not found, set price to null. Never output "N/A".`;
+IMPORTANT RULES:
+1. ONLY include REAL products with REAL prices found in search results
+2. Price MUST include currency symbol ($ ₹ € £) 
+3. Rating MUST be a decimal number from actual review sites
+4. If you cannot find price for a product, set price to null
+5. If you cannot find rating for a product, set rating to null
+6. NEVER output "N/A" - use null instead
+7. NEVER invent or estimate prices - only use exact prices found`;
 
   try {
     const content = await callPerplexityAPI(query, perplexityKey);
