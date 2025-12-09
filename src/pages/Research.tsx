@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Loader2, CheckCircle, XCircle, Clock, History, Trash2, Key, Sparkles } from "lucide-react";
+import { Search, Loader2, CheckCircle, XCircle, Clock, History, Trash2, Key, Sparkles, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -16,6 +16,7 @@ import { ResearchLimitationsBox } from "@/components/ResearchLimitationsBox";
 import { ErrorExplanationPanel } from "@/components/ErrorExplanationPanel";
 import { PerplexityResearchResults } from "@/components/PerplexityResearchResults";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +49,7 @@ export default function Research() {
   const [perplexityResults, setPerplexityResults] = useState<any>(null);
   const [isPerplexityLoading, setIsPerplexityLoading] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -324,62 +326,116 @@ export default function Research() {
       {/* Recent History Section */}
       {recentHistory.length > 0 && (
         <Card className="glass-effect border-border/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <History className="h-5 w-5 text-primary" />
-              Recent Research History
-            </CardTitle>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5 text-primary" />
+                Recent Research History
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 ml-2 hover:bg-primary/10 transition-colors"
+                        onClick={() => {
+                          try {
+                            setIsHistoryExpanded(!isHistoryExpanded);
+                          } catch (error) {
+                            toast({
+                              title: "Unable to open recent history",
+                              variant: "destructive",
+                            });
+                          }
+                        }}
+                      >
+                        {isHistoryExpanded ? (
+                          <EyeOff className="h-4 w-4 text-primary" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-primary" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{isHistoryExpanded ? 'Hide Recent History' : 'View Recent History'}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </CardTitle>
+              <Badge variant="secondary" className="text-xs">
+                {recentHistory.length} projects
+              </Badge>
+            </div>
             <CardDescription>Your previously analyzed products and companies</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {recentHistory.map((project) => (
-                <div key={project.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border border-border/50 hover:bg-secondary/70 transition-colors">
-                  <div className="flex-1">
-                    <h4 className="font-medium">{project.product_name}</h4>
-                    <p className="text-sm text-muted-foreground">{project.company_name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {new Date(project.created_at).toLocaleDateString()}
-                    </p>
+          
+          {/* Collapsible History Content */}
+          <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
+            isHistoryExpanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'
+          }`}>
+            <CardContent className="pt-0">
+              <div className="space-y-3">
+                {recentHistory.map((project) => (
+                  <div key={project.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border border-border/50 hover:bg-secondary/70 transition-colors animate-fade-in">
+                    <div className="flex-1">
+                      <h4 className="font-medium">{project.product_name}</h4>
+                      <p className="text-sm text-muted-foreground">{project.company_name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {new Date(project.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`px-2 py-1 rounded text-xs ${
+                        project.status === 'completed' ? 'bg-green-500/20 text-green-500' :
+                        project.status === 'in_progress' ? 'bg-blue-500/20 text-blue-500' :
+                        'bg-yellow-500/20 text-yellow-500'
+                      }`}>
+                        {project.status}
+                      </span>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This action cannot be undone. This will permanently delete the research project
+                              "{project.product_name}" and all associated data.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDeleteProject(project.id)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      project.status === 'completed' ? 'bg-green-500/20 text-green-500' :
-                      project.status === 'in_progress' ? 'bg-blue-500/20 text-blue-500' :
-                      'bg-yellow-500/20 text-yellow-500'
-                    }`}>
-                      {project.status}
-                    </span>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete the research project
-                            "{project.product_name}" and all associated data.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => handleDeleteProject(project.id)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          >
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
+                ))}
+              </div>
+            </CardContent>
+          </div>
+          
+          {/* Collapsed Preview - shows summary when collapsed */}
+          {!isHistoryExpanded && (
+            <CardContent className="pt-0">
+              <div 
+                className="flex items-center justify-center p-3 rounded-lg bg-secondary/30 border border-border/30 cursor-pointer hover:bg-secondary/50 transition-colors"
+                onClick={() => setIsHistoryExpanded(true)}
+              >
+                <Eye className="h-4 w-4 text-muted-foreground mr-2" />
+                <span className="text-sm text-muted-foreground">Click to view {recentHistory.length} recent projects</span>
+              </div>
+            </CardContent>
+          )}
         </Card>
       )}
 
