@@ -229,38 +229,47 @@ function parseAPIResponse(content: string): any {
   }
 }
 
-// SENTIMENT AGENT - STRICT API MODE
+// SENTIMENT AGENT - STRICT API MODE (100% API-GROUNDED)
 async function runSentimentAgent(productName: string, companyName: string, perplexityKey: string, groqKey?: string) {
   console.log('Running sentiment agent for:', productName);
   
-  const query = `Search for customer reviews and sentiment analysis for "${productName}" ${companyName ? `by ${companyName}` : ''}.
+  const query = `You are a market research data extractor. Search for REAL customer reviews and ratings for "${productName}"${companyName ? ` by ${companyName}` : ''}.
 
-Search on sites like Amazon, Flipkart, Best Buy, Google Reviews, Trustpilot, Reddit, tech review sites, etc.
+MANDATORY: Search these e-commerce and review sites:
+- Amazon (amazon.com, amazon.in)
+- Flipkart
+- Best Buy
+- Google Reviews
+- Trustpilot
+- Reddit discussions
+- Tech review sites (CNET, TechRadar, Tom's Guide)
 
-Return a JSON object with ONLY data found in your search results:
+Return ONLY a valid JSON object with REAL data found in search results:
+
 {
-  "overallScore": <number 0-100 calculated from average ratings, e.g. 4.2/5 = 84>,
-  "positive": <percentage of positive reviews - calculate from actual review breakdown>,
-  "negative": <percentage of negative reviews - calculate from actual review breakdown>,
-  "neutral": <percentage of neutral reviews - calculate from actual review breakdown>,
-  "positiveThemes": [<actual positive points mentioned in reviews like "good battery life", "comfortable fit">],
-  "negativeThemes": [<actual negative points mentioned in reviews like "poor sound quality", "connectivity issues">],
+  "overallScore": <REQUIRED: Calculate from average ratings. Example: If average is 4.1/5, score = 82. Must be 0-100 integer>,
+  "averageRating": <REQUIRED: Decimal rating like 4.1, 3.8, etc. from actual review sites>,
+  "positive": <REQUIRED: Integer percentage of positive reviews (4-5 stars). Calculate from real breakdown>,
+  "negative": <REQUIRED: Integer percentage of negative reviews (1-2 stars). Calculate from real breakdown>,
+  "neutral": <REQUIRED: Integer percentage of neutral reviews (3 stars). Calculate from real breakdown>,
+  "totalReviewsAnalyzed": <REQUIRED: Total number of reviews you found data from>,
+  "positiveThemes": [<REQUIRED: 3-5 actual positive points from real reviews like "great battery", "comfortable fit", "good value">],
+  "negativeThemes": [<REQUIRED: 3-5 actual negative points from real reviews like "poor mic quality", "loose fit", "short cable">],
   "reviews": [
-    {"source": "<website name>", "rating": <1-5 decimal>, "text": "<actual review snippet found>", "date": "<date if available>"}
+    {"source": "Amazon", "rating": 4.2, "text": "<actual review snippet>", "helpful_votes": <if available>},
+    {"source": "Flipkart", "rating": 3.8, "text": "<actual review snippet>"}
   ],
-  "sourceDomains": [<list of domains where reviews were found e.g. "amazon.com", "reddit.com">],
-  "averageRating": <average rating from all sources as decimal e.g. 4.2>,
-  "totalReviewsFound": <total number of reviews analyzed>,
-  "rawDataSummary": "<brief summary of what was actually retrieved from API>"
+  "sourceDomains": ["amazon.in", "flipkart.com", "reddit.com"],
+  "dataQuality": "complete" | "partial" | "insufficient"
 }
 
-IMPORTANT RULES:
-1. ONLY include data actually found in search results
-2. Calculate percentages from real review data (e.g., if 80% of reviews are 4-5 stars, positive = 80)
-3. Extract themes from actual review text, not assumptions
-4. If no reviews found, set values to null
-5. NEVER fabricate review scores or percentages
-6. Use null for missing fields, NEVER use "N/A"`;
+CRITICAL RULES:
+1. ALL percentages must add up to 100% (positive + negative + neutral = 100)
+2. Calculate overallScore as: (averageRating / 5) * 100
+3. Extract themes from ACTUAL review text only
+4. Include at least 3 real review snippets
+5. If data unavailable for any field, use null (NEVER use "N/A" or empty string)
+6. DO NOT INVENT OR ESTIMATE - only report what you actually found`;
 
   try {
     const content = await callPerplexityAPI(query, perplexityKey);
@@ -268,7 +277,7 @@ IMPORTANT RULES:
     
     if (!parsed) {
       return {
-        _apiError: 'Unable to generate insights due to missing API data. Please verify API keys or re-trigger the pipeline.',
+        _apiError: 'Insufficient API data — unable to produce sentiment metrics.',
         apiSourcesUsed: ['Perplexity Sonar API'],
         rawAPISummary: 'No valid data returned from API',
         processedInsights: null,
@@ -286,31 +295,67 @@ IMPORTANT RULES:
       };
     }
 
-    // Validate that we have real data
-    const hasRealData = parsed.reviews?.length > 0 || parsed.sourceDomains?.length > 0 || parsed.overallScore !== null;
+    // Validate and normalize sentiment percentages
+    let positive = parsed.positive;
+    let negative = parsed.negative;
+    let neutral = parsed.neutral;
+    
+    // Ensure percentages are valid numbers
+    if (typeof positive === 'number' && typeof negative === 'number' && typeof neutral === 'number') {
+      const total = positive + negative + neutral;
+      if (total !== 100 && total > 0) {
+        // Normalize to 100%
+        positive = Math.round((positive / total) * 100);
+        negative = Math.round((negative / total) * 100);
+        neutral = 100 - positive - negative;
+      }
+    }
+
+    // Calculate overallScore if not provided but we have averageRating
+    let overallScore = parsed.overallScore;
+    if ((overallScore === null || overallScore === undefined) && parsed.averageRating) {
+      overallScore = Math.round((parsed.averageRating / 5) * 100);
+    }
+
+    const hasRealData = 
+      (overallScore !== null && overallScore !== undefined) ||
+      parsed.reviews?.length > 0 || 
+      parsed.positiveThemes?.length > 0 ||
+      parsed.sourceDomains?.length > 0;
     
     // Build missing data report
     const missingFields = [];
-    if (parsed.overallScore === null || parsed.overallScore === undefined) missingFields.push('overallScore');
-    if (parsed.positive === null || parsed.positive === undefined) missingFields.push('positive');
-    if (parsed.negative === null || parsed.negative === undefined) missingFields.push('negative');
+    if (overallScore === null || overallScore === undefined) missingFields.push('overallScore');
+    if (positive === null || positive === undefined) missingFields.push('positive');
+    if (negative === null || negative === undefined) missingFields.push('negative');
     if (!parsed.positiveThemes?.length) missingFields.push('positiveThemes');
     if (!parsed.negativeThemes?.length) missingFields.push('negativeThemes');
     if (!parsed.reviews?.length) missingFields.push('reviews');
     
     return {
-      ...parsed,
+      overallScore: overallScore,
+      averageRating: parsed.averageRating || null,
+      positive: positive,
+      negative: negative,
+      neutral: neutral,
+      totalReviewsAnalyzed: parsed.totalReviewsAnalyzed || parsed.reviews?.length || 0,
+      positiveThemes: parsed.positiveThemes || [],
+      negativeThemes: parsed.negativeThemes || [],
+      reviews: parsed.reviews || [],
+      sourceDomains: parsed.sourceDomains || [],
       apiSourcesUsed: ['Perplexity Sonar API'],
-      rawAPISummary: parsed.rawDataSummary || `Retrieved ${parsed.reviews?.length || 0} reviews from ${parsed.sourceDomains?.length || 0} sources`,
+      rawAPISummary: `Retrieved ${parsed.reviews?.length || 0} reviews from ${parsed.sourceDomains?.length || 0} sources. Average rating: ${parsed.averageRating || 'not found'}`,
       processedInsights: hasRealData ? {
-        sentimentLabel: parsed.overallScore >= 70 ? 'positive' : parsed.overallScore >= 40 ? 'mixed' : 'negative',
-        dominantThemes: [...(parsed.positiveThemes || []).slice(0, 3), ...(parsed.negativeThemes || []).slice(0, 3)],
-        reviewCount: parsed.reviews?.length || parsed.totalReviewsFound || 0
+        sentimentLabel: overallScore >= 70 ? 'Positive' : overallScore >= 40 ? 'Mixed' : 'Negative',
+        dominantPositiveTheme: parsed.positiveThemes?.[0] || null,
+        dominantNegativeTheme: parsed.negativeThemes?.[0] || null,
+        reviewCount: parsed.totalReviewsAnalyzed || parsed.reviews?.length || 0
       } : null,
       missingDataReport: missingFields.length > 0 ? missingFields : null,
-      confidence: parsed.confidence || (hasRealData ? 70 : 20),
+      confidence: hasRealData ? (parsed.reviews?.length >= 5 ? 85 : 65) : 20,
       confidenceLevel: hasRealData ? 'High' : 'Low',
       dataStatus: hasRealData ? 'complete' : 'insufficient',
+      dataQuality: parsed.dataQuality || (hasRealData ? 'complete' : 'insufficient'),
       apiEndpoint: 'Perplexity Sonar',
       resultsCount: parsed.reviews?.length || 0,
       _apiVerified: true
@@ -318,7 +363,7 @@ IMPORTANT RULES:
   } catch (error) {
     console.error('Sentiment agent API error:', error);
     return {
-      _apiError: error instanceof Error ? error.message : 'Unable to generate insights due to missing API data. Please verify API keys or re-trigger the pipeline.',
+      _apiError: error instanceof Error ? error.message : 'Insufficient API data — unable to produce sentiment metrics.',
       apiSourcesUsed: ['Perplexity Sonar API'],
       rawAPISummary: 'API call failed',
       processedInsights: null,
@@ -337,46 +382,49 @@ IMPORTANT RULES:
   }
 }
 
-// COMPETITOR AGENT - STRICT API MODE  
+// COMPETITOR AGENT - STRICT API MODE (LIMIT TO 4-5 COMPETITORS)
 async function runCompetitorAgent(productName: string, companyName: string, perplexityKey: string, groqKey?: string) {
   console.log('Running competitor agent for:', productName);
   
-  const query = `Search for competitors and alternatives to "${productName}" ${companyName ? `by ${companyName}` : ''}.
+  const query = `You are a market research data extractor. Search for the TOP 4-5 most relevant competitors to "${productName}"${companyName ? ` by ${companyName}` : ''}.
 
-I need you to find REAL pricing and rating data from actual e-commerce sites, review sites, and product pages.
+MANDATORY: Search these e-commerce sites for REAL pricing and ratings:
+- Amazon (amazon.com, amazon.in, amazon.co.uk)
+- Flipkart
+- Best Buy
+- Official brand websites
+- Tech review sites (CNET, TechRadar, GSMArena)
 
-Search on sites like Amazon, Flipkart, Best Buy, official product websites, tech review sites like TechRadar, CNET, GSMArena, etc.
+Return ONLY a valid JSON object with EXACTLY 4-5 competitors:
 
-Return a JSON object with ONLY data found in your search results:
 {
   "competitors": [
     {
-      "name": "<actual competitor product name found>",
-      "company": "<actual company/brand name>",
-      "price": "<exact price found e.g. '$29.99' or '₹1,299' - include currency symbol>",
-      "priceSource": "<exact website/URL where price was found>",
-      "rating": <rating as decimal e.g. 4.2 or 3.8 - from actual reviews>,
-      "ratingSource": "<exact website where rating was found e.g. Amazon, Flipkart>",
-      "reviewCount": <number of reviews if available>,
-      "features": [<actual key features listed in product descriptions>],
-      "advantages": [<advantages over the searched product>],
-      "disadvantages": [<disadvantages compared to searched product>]
+      "name": "<REQUIRED: Exact product name found>",
+      "company": "<REQUIRED: Brand name like Samsung, JBL, Sony>",
+      "price": "<REQUIRED: Exact price with currency symbol like '$29.99' or '₹1,299' or '£24.99'>",
+      "priceSource": "<REQUIRED: Exact site where price was found like 'Amazon India', 'Flipkart'>",
+      "rating": <REQUIRED: Decimal rating from reviews like 4.2, 3.8, 4.5>,
+      "ratingSource": "<REQUIRED: Site where rating was found like 'Amazon', 'Flipkart'>",
+      "reviewCount": <Number of reviews if available>,
+      "features": ["feature1", "feature2", "feature3"],
+      "url": "<product page URL if available>"
     }
   ],
-  "sourceDomains": [<list of domains actually searched e.g. "amazon.com", "flipkart.com">],
-  "totalCompetitorsFound": <number>,
-  "searchQuery": "${productName} alternatives competitors price comparison",
-  "rawDataSummary": "<brief summary of actual data found>"
+  "sourceDomains": ["amazon.in", "flipkart.com"],
+  "searchQuery": "competitors alternatives to ${productName}",
+  "dataQuality": "complete" | "partial"
 }
 
-IMPORTANT RULES:
-1. ONLY include REAL products with REAL prices found in search results
-2. Price MUST include currency symbol ($ ₹ € £) 
-3. Rating MUST be a decimal number from actual review sites
-4. If you cannot find price for a product, set price to null
-5. If you cannot find rating for a product, set rating to null
-6. NEVER output "N/A" - use null instead
-7. NEVER invent or estimate prices - only use exact prices found`;
+CRITICAL RULES:
+1. Return EXACTLY 4-5 competitors (no more, no less)
+2. Every competitor MUST have a real price with currency symbol (₹, $, €, £)
+3. Every competitor MUST have a real rating (decimal like 4.2)
+4. Price and rating MUST come from actual e-commerce sites
+5. If you cannot find price for a product, DO NOT include that product
+6. If you cannot find rating for a product, DO NOT include that product
+7. NEVER use "N/A", null, or empty values for price/rating
+8. Only include products with COMPLETE data (name, company, price, rating)`;
 
   try {
     const content = await callPerplexityAPI(query, perplexityKey);
@@ -396,40 +444,71 @@ IMPORTANT RULES:
       };
     }
 
-    // Validate competitors have real data
-    const validCompetitors = (parsed.competitors || []).filter((c: any) => 
-      c.name && c.name !== 'N/A' && !c.name.includes('Unable')
-    );
+    // Filter to only competitors with COMPLETE data (price and rating)
+    const validCompetitors = (parsed.competitors || [])
+      .filter((c: any) => {
+        const hasName = c.name && c.name !== 'N/A' && !c.name.toLowerCase().includes('unable');
+        const hasPrice = c.price && c.price !== 'N/A' && c.price !== null && c.price !== '';
+        const hasRating = c.rating !== null && c.rating !== undefined && c.rating !== 'N/A' && !isNaN(Number(c.rating));
+        return hasName && hasPrice && hasRating;
+      })
+      .slice(0, 5) // LIMIT TO 5 COMPETITORS
+      .map((c: any) => ({
+        name: c.name,
+        company: c.company || 'Unknown Brand',
+        price: c.price,
+        priceSource: c.priceSource || 'E-commerce site',
+        rating: typeof c.rating === 'number' ? c.rating : parseFloat(c.rating),
+        ratingSource: c.ratingSource || 'Review site',
+        reviewCount: c.reviewCount || null,
+        features: c.features || [],
+        url: c.url || null,
+        priceConfidence: 90,
+        ratingConfidence: 90,
+        confidenceLevel: 'High',
+        dataComplete: true
+      }));
 
     const hasRealData = validCompetitors.length > 0;
     
-    // Build missing data report for each competitor
+    // Build missing data report
+    const originalCount = parsed.competitors?.length || 0;
+    const filteredOut = originalCount - validCompetitors.length;
     const missingFields = [];
-    validCompetitors.forEach((c: any) => {
-      if (c.price === null || c.price === undefined) missingFields.push(`API returned no price for ${c.name}`);
-      if (c.rating === null || c.rating === undefined) missingFields.push(`API returned no rating for ${c.name}`);
-    });
-    if (!hasRealData) missingFields.push('No competitors found in API results');
+    if (filteredOut > 0) {
+      missingFields.push(`${filteredOut} competitors excluded due to missing price/rating data`);
+    }
+    if (!hasRealData) {
+      missingFields.push('No competitors with complete pricing and rating data found');
+    }
 
     return {
-      competitors: validCompetitors.map((c: any) => ({
-        ...c,
-        priceConfidence: c.price && c.price !== null && c.priceSource ? 80 : 0,
-        ratingConfidence: c.rating !== null && c.ratingSource ? 80 : 0,
-        confidenceLevel: c.priceSource && c.ratingSource ? 'High' : c.priceSource || c.ratingSource ? 'Medium' : 'Low',
-        sourceEvidence: c.priceSource || c.ratingSource || 'No source available'
-      })),
+      competitors: validCompetitors,
+      totalCompetitorsReturned: validCompetitors.length,
       apiSourcesUsed: ['Perplexity Sonar API'],
-      rawAPISummary: parsed.rawDataSummary || `Found ${validCompetitors.length} competitors from ${parsed.sourceDomains?.length || 0} sources`,
+      rawAPISummary: `Found ${validCompetitors.length} competitors with complete data from ${parsed.sourceDomains?.length || 0} sources`,
       processedInsights: hasRealData ? {
         competitorCount: validCompetitors.length,
-        priceRangeAvailable: validCompetitors.filter((c: any) => c.price !== null).length,
-        topCompetitors: validCompetitors.slice(0, 3).map((c: any) => c.name)
+        priceRange: validCompetitors.length > 0 ? {
+          lowest: validCompetitors.reduce((min: any, c: any) => {
+            const price = parseFloat(c.price.replace(/[^0-9.]/g, ''));
+            return min === null || price < min ? price : min;
+          }, null),
+          highest: validCompetitors.reduce((max: any, c: any) => {
+            const price = parseFloat(c.price.replace(/[^0-9.]/g, ''));
+            return max === null || price > max ? price : max;
+          }, null)
+        } : null,
+        avgRating: validCompetitors.length > 0 
+          ? (validCompetitors.reduce((sum: number, c: any) => sum + c.rating, 0) / validCompetitors.length).toFixed(1)
+          : null,
+        topCompetitor: validCompetitors[0]?.name || null
       } : null,
       missingDataReport: missingFields.length > 0 ? missingFields : null,
       sourceDomains: parsed.sourceDomains || [],
-      overallConfidence: hasRealData ? 70 : 0,
+      overallConfidence: hasRealData ? 85 : 0,
       dataStatus: hasRealData ? 'complete' : 'insufficient',
+      dataQuality: parsed.dataQuality || (hasRealData ? 'complete' : 'insufficient'),
       apiEndpoint: 'Perplexity Sonar',
       resultsCount: validCompetitors.length,
       _apiVerified: true
@@ -437,7 +516,7 @@ IMPORTANT RULES:
   } catch (error) {
     console.error('Competitor agent API error:', error);
     return {
-      _apiError: error instanceof Error ? error.message : 'Unable to generate insights due to missing API data. Please verify API keys or re-trigger the pipeline.',
+      _apiError: error instanceof Error ? error.message : 'Insufficient API data — unable to produce competitor analysis.',
       apiSourcesUsed: ['Perplexity Sonar API'],
       rawAPISummary: 'API call failed',
       processedInsights: null,
