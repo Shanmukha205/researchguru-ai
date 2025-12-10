@@ -15,6 +15,7 @@ import { ResearchModeSelector } from "@/components/ResearchModeSelector";
 import { ResearchLimitationsBox } from "@/components/ResearchLimitationsBox";
 import { ErrorExplanationPanel } from "@/components/ErrorExplanationPanel";
 import { PerplexityResearchResults } from "@/components/PerplexityResearchResults";
+import { PastResultsViewer } from "@/components/PastResultsViewer";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -50,6 +51,7 @@ export default function Research() {
   const [isPerplexityLoading, setIsPerplexityLoading] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+  const [showPastResultsViewer, setShowPastResultsViewer] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -604,9 +606,28 @@ export default function Research() {
           <Card className="glass-effect border-border/50">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Agent Research Outcomes</CardTitle>
-                  <CardDescription>Detailed results from each agent</CardDescription>
+                <div className="flex items-center gap-3">
+                  <div>
+                    <CardTitle>Agent Research Outcomes</CardTitle>
+                    <CardDescription>Detailed results from each agent</CardDescription>
+                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 hover:bg-primary/10 transition-colors"
+                          onClick={() => setShowPastResultsViewer(true)}
+                        >
+                          <Eye className="h-4 w-4 text-primary" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>View Previous Results</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
                 {currentProjectId && (
                   <ReportGenerator 
@@ -651,6 +672,14 @@ export default function Research() {
           )}
 
           <AgentMetricsCalculator agentOutcomes={agentOutcomes} />
+
+          {/* Past Results Viewer Modal */}
+          <PastResultsViewer
+            open={showPastResultsViewer}
+            onOpenChange={setShowPastResultsViewer}
+            projectId={currentProjectId}
+            projectName={productName || recentHistory[0]?.product_name}
+          />
         </>
       )}
     </div>
