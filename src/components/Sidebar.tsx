@@ -1,4 +1,4 @@
-import { TrendingUp, Users, Target, Menu, LineChart, BarChart3, MessageSquare, Lightbulb } from "lucide-react";
+import { TrendingUp, Users, Target, Menu, LineChart, BarChart3, MessageSquare, Lightbulb, FileSpreadsheet } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import {
   Sidebar as SidebarUI,
@@ -21,6 +21,7 @@ const menuItems = [
   { title: "Cross-Market Correlation", url: "/cross-market", icon: TrendingUp },
   { title: "Consumer Persona Predictor", url: "/consumer-persona", icon: Users },
   { title: "Scenario Simulator", url: "/scenario-simulator", icon: Target },
+  { title: "Dataset Studio", url: "/dataset-studio", icon: FileSpreadsheet },
 ];
 
 export function Sidebar() {
