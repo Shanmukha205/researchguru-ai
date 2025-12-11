@@ -13,6 +13,7 @@ import AIInsightsCenter from "./pages/AIInsightsCenter";
 import CrossMarket from "./pages/CrossMarket";
 import ConsumerPersona from "./pages/ConsumerPersona";
 import ScenarioSimulator from "./pages/ScenarioSimulator";
+import DatasetStudio from "./pages/DatasetStudio";
 import MyNotes from "./pages/MyNotes";
 import AIAssistant from "./pages/AIAssistant";
 import EnhancedSettings from "./pages/EnhancedSettings";
@@ -66,6 +67,7 @@ const App = () => (
                 <Route path="/cross-market" element={<CrossMarket />} />
                 <Route path="/consumer-persona" element={<ConsumerPersona />} />
                 <Route path="/scenario-simulator" element={<ScenarioSimulator />} />
+                <Route path="/dataset-studio" element={<DatasetStudio />} />
                 <Route path="/my-notes" element={<MyNotes />} />
                 <Route path="/settings" element={<EnhancedSettings />} />
                 <Route path="/pricing" element={<Pricing />} />
